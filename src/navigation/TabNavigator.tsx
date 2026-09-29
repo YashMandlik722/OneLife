@@ -15,24 +15,19 @@ interface TabNavigatorProps {
 export default function TabNavigator({ onSignOut }: TabNavigatorProps) {
   const [activeTab, setActiveTab] = useState<TabType>('Challenge');
 
-  const renderScreen = () => {
-    switch (activeTab) {
-      case 'Challenge':
-        return <ChallengeScreen />;
-      case 'Leaderboard':
-        return <LeaderboardScreen />;
-      case 'Me':
-        return <MeScreen />;
-      default:
-        return <ChallengeScreen />;
-    }
-  };
-
   return (
     <View style={styles.container}>
-      {/* Screen Body */}
+      {/* Screen Body: Persistent mounting for instant 0ms tab switching */}
       <View style={styles.screenContainer}>
-        {renderScreen()}
+        <View style={[styles.screenWrapper, activeTab !== 'Challenge' && styles.hiddenScreen]}>
+          <ChallengeScreen />
+        </View>
+        <View style={[styles.screenWrapper, activeTab !== 'Leaderboard' && styles.hiddenScreen]}>
+          <LeaderboardScreen />
+        </View>
+        <View style={[styles.screenWrapper, activeTab !== 'Me' && styles.hiddenScreen]}>
+          <MeScreen />
+        </View>
       </View>
 
       {/* Custom Bottom Tab Bar */}
@@ -108,6 +103,12 @@ const styles = StyleSheet.create({
   },
   screenContainer: {
     flex: 1,
+  },
+  screenWrapper: {
+    flex: 1,
+  },
+  hiddenScreen: {
+    display: 'none',
   },
   tabBar: {
     flexDirection: 'row',

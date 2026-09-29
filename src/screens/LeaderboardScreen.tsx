@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -29,7 +29,7 @@ const leaderboardBg = require('../../assets/leaderboard_bg.png');
 
 export default function LeaderboardScreen() {
   const [viewType, setViewType] = useState<'Individual' | 'Department'>('Individual');
-  
+
   // Instant synchronous cache initialization to eliminate 2-3s navigation delay
   const [userEntries, setUserEntries] = useState<LeaderboardUserEntry[]>(() => {
     return getCache<LeaderboardUserEntry[]>('leaderboard_users') || [];
@@ -94,16 +94,12 @@ export default function LeaderboardScreen() {
   const individualLeaderboard = userEntries;
   const departmentLeaderboard = deptEntries;
 
-  // Top 3 Podium Users
-  const rank1 = individualLeaderboard.find((u) => u.rank === 1);
-  const rank2 = individualLeaderboard.find((u) => u.rank === 2);
-  const rank3 = individualLeaderboard.find((u) => u.rank === 3);
-
-  // User position (dynamic current user)
-  const currentUser = individualLeaderboard.find((u) => u.isCurrentUser) || individualLeaderboard[0];
-
-  // Remaining rankings (#4 onwards)
-  const remainingRankings = individualLeaderboard.filter((u) => u.rank >= 4);
+  // Memoized Rankings Calculations for 60fps Rendering
+  const rank1 = useMemo(() => individualLeaderboard.find((u) => u.rank === 1), [individualLeaderboard]);
+  const rank2 = useMemo(() => individualLeaderboard.find((u) => u.rank === 2), [individualLeaderboard]);
+  const rank3 = useMemo(() => individualLeaderboard.find((u) => u.rank === 3), [individualLeaderboard]);
+  const currentUser = useMemo(() => individualLeaderboard.find((u) => u.isCurrentUser) || individualLeaderboard[0], [individualLeaderboard]);
+  const remainingRankings = useMemo(() => individualLeaderboard.filter((u) => u.rank >= 4), [individualLeaderboard]);
 
   if (loading && userEntries.length === 0 && deptEntries.length === 0) {
     return (
@@ -149,13 +145,6 @@ export default function LeaderboardScreen() {
                 </View>
 
                 <View style={styles.headerRightActions}>
-                  <TouchableOpacity style={styles.infoButton} onPress={() => { setRefreshing(true); loadLeaderboards(true); }} disabled={loading || refreshing} activeOpacity={0.7}>
-                    {loading || refreshing ? (
-                      <ActivityIndicator size="small" color="#22D3EE" />
-                    ) : (
-                      <Ionicons name="refresh-outline" size={20} color="#9CA3AF" />
-                    )}
-                  </TouchableOpacity>
                   <Image
                     source={require('../../assets/OneLifeInAppLogo.png')}
                     style={styles.topRightLogo}
