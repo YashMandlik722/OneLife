@@ -13,12 +13,21 @@ export interface ApiResponse<T = any> {
 }
 
 let authToken: string | null = null;
+let activeUserId: string | number = 104; // Default session user_id (104 - Yash Mandlik)
 
 export const setAuthToken = (token: string | null) => {
   authToken = token;
 };
 
 export const getAuthToken = (): string | null => authToken;
+
+export const setActiveUserId = (userId: string | number | null | undefined) => {
+  if (userId) {
+    activeUserId = userId;
+  }
+};
+
+export const getActiveUserId = (): string | number => activeUserId;
 
 export async function apiFetch<T = any>(
   endpoint: string,
@@ -73,8 +82,8 @@ export async function apiFetch<T = any>(
     console.warn(`API Error [${endpoint}]:`, error?.message || error);
     return {
       success: false,
-      message: error?.name === 'AbortError' 
-        ? 'Request timed out. Please check backend network.' 
+      message: error?.name === 'AbortError'
+        ? 'Request timed out. Please check backend network.'
         : (error?.message || 'Network error connecting to server'),
     };
   }

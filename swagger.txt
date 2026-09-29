@@ -840,7 +840,7 @@ This API powers a company health-monitoring and employee team-engagement platfor
         }
       }
     },
-    '/api/v1/activities': {
+    '/api/v1/activities': { 
       post: {
         summary: 'Submit health/fitness activity',
         description: 'Logs activity (steps, calories, elevation). Automatically checks active team challenges, increments progress, and triggers completion/point distribution if target reached.',

@@ -8,17 +8,20 @@ import {
   ActivityIndicator,
   Platform,
   Image,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 
 
 import { getHealthProvider, HealthData } from '../health';
 import { fetchUserDashboard, fetchMeProfile, UserDashboardData } from '../api/user';
 import { syncNativeHealthKitActivity } from '../api/activity';
-import { User } from '../types/database';
+import { User, LeaderboardUserEntry } from '../types/database';
+import { getCache } from '../utils/cache';
 
 export default function MeScreen() {
   const [selectedSegment, setSelectedSegment] = useState<'Daily' | 'Weekly' | 'Monthly'>('Daily');
@@ -26,12 +29,13 @@ export default function MeScreen() {
   const [dashboardData, setDashboardData] = useState<UserDashboardData | null>(null);
   const [userProfile, setUserProfile] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
-  const loadUserData = useCallback(async () => {
+  const loadUserData = useCallback(async (forceRefresh: boolean = false) => {
     // 1. Fetch User Dashboard with SWR Cache
     const dashRes = await fetchUserDashboard((freshDash) => {
       setDashboardData(freshDash);
-    });
+    }, forceRefresh);
     if (dashRes.data) {
       setDashboardData(dashRes.data);
     }
@@ -39,22 +43,24 @@ export default function MeScreen() {
     // 2. Fetch Profile with SWR Cache
     const profRes = await fetchMeProfile((freshUser) => {
       setUserProfile(freshUser);
-    });
+    }, forceRefresh);
     if (profRes.data) {
       setUserProfile(profRes.data);
     }
   }, []);
 
-  const fetchHealthData = useCallback(async () => {
-    setLoading(true);
+  const fetchHealthData = useCallback(async (forceRefresh: boolean = false) => {
+    if (!dashboardData && !userProfile) {
+      setLoading(true);
+    }
     try {
-      await loadUserData();
+      await loadUserData(forceRefresh);
 
       // Read native HealthKit and sync to backend API (POST /api/v1/activities)
       const syncResult = await syncNativeHealthKitActivity(userProfile?.id, true);
       if (syncResult.success) {
         // Re-read fresh dashboard data after backend point calculation
-        const updatedDash = await fetchUserDashboard();
+        const updatedDash = await fetchUserDashboard(undefined, true);
         if (updatedDash.data) {
           setDashboardData(updatedDash.data);
         }
@@ -67,11 +73,17 @@ export default function MeScreen() {
       console.warn('Failed to load health data in MeScreen:', e);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [loadUserData, userProfile?.id]);
 
   useEffect(() => {
     fetchHealthData();
+  }, [fetchHealthData]);
+
+  const handlePullRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchHealthData(true);
   }, [fetchHealthData]);
 
   // Format Today's Date (e.g. MON, SEP 28)
@@ -82,21 +94,39 @@ export default function MeScreen() {
   // Dynamic Identity Data
   const userName = userProfile?.name || dashboardData?.user?.name || 'User';
   const userDept = userProfile?.department?.name || dashboardData?.department?.name || 'Member';
-  const totalPoints = dashboardData?.points?.total ?? 0;
+
+  // Multi-fallback evaluation for Total Points
+  const rawPoints = (dashboardData as any)?.points;
+  const cachedLeaderboardUsers = getCache<LeaderboardUserEntry[]>('leaderboard_users');
+  const currentUserLeaderboard = cachedLeaderboardUsers?.find((u) => u.isCurrentUser || u.id === userProfile?.id || u.id === dashboardData?.user?.id);
+
+  const totalPoints = Math.round(
+    typeof rawPoints === 'number'
+      ? rawPoints
+      : typeof rawPoints?.total === 'number'
+      ? rawPoints.total
+      : (userProfile as any)?.points?.total ??
+        (userProfile as any)?.points ??
+        currentUserLeaderboard?.points ??
+        0
+  );
 
   // Metrics Data (Merged from Native HealthKit & Backend API Dashboard)
   const steps = healthData?.steps ?? dashboardData?.activities?.today?.steps ?? 0;
   const distanceKm = healthData?.distanceKm ?? 0;
   const floorsClimbed = healthData?.floorsClimbed ?? dashboardData?.activities?.today?.elevation ?? 0;
+  const caloriesBurned = healthData?.caloriesKcal ?? dashboardData?.activities?.today?.calories ?? 0;
 
   // Goals
-  const STEP_GOAL = 15000;
-  const DISTANCE_GOAL = 10.0;
-  const FLOORS_GOAL = 54;
+  const STEP_GOAL = 10000;
+  const DISTANCE_GOAL = 7.0;
+  const FLOORS_GOAL = 15;
+  const CALORIES_GOAL = 1000;
 
   const stepPercent = Math.min(Math.round((steps / STEP_GOAL) * 100), 100);
   const distPercent = Math.min(Math.round((distanceKm / DISTANCE_GOAL) * 100), 100);
   const floorPercent = Math.min(Math.round((floorsClimbed / FLOORS_GOAL) * 100), 100);
+  const caloriePercent = Math.min(Math.round((caloriesBurned / CALORIES_GOAL) * 100), 100);
 
   if (loading && !dashboardData && !userProfile) {
     return (
@@ -113,26 +143,35 @@ export default function MeScreen() {
 
   return (
 
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar style="light" />
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handlePullRefresh}
+            tintColor={colors.accentCyan}
+            colors={[colors.accentCyan, colors.accentGreen]}
+            progressBackgroundColor="#05070D"
+          />
+        }
+      >
         {/* Top Header: Identity & Date */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.headerTitle}>Your activity</Text>
-          </View>
-          <View style={styles.headerRightActions}>
-            <View style={styles.dateBadge}>
-              <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
-              <Text style={styles.dateBadgeText}>{todayDateString}</Text>
+          <View style={styles.headerLeftColumn}>
+            <Text style={styles.headerTitle}>Your Activity</Text>
+            <View style={styles.headerDateRow}>
+              <Ionicons name="calendar-outline" size={13} color={colors.textSecondary} />
+              <Text style={styles.headerDateText}>{todayDateString}</Text>
             </View>
-            <Image
-              source={require('../../assets/OneLifeInAppLogo.png')}
-              style={styles.topRightLogo}
-              resizeMode="contain"
-            />
           </View>
-
+          <Image
+            source={require('../../assets/OneLifeInAppLogo.png')}
+            style={styles.topRightLogo}
+            resizeMode="contain"
+          />
         </View>
 
         {/* Daily / Weekly / Monthly Segment Switcher */}
@@ -158,7 +197,7 @@ export default function MeScreen() {
         <View style={styles.activityCard}>
           <View style={styles.activityCardHeader}>
             <Text style={styles.activityCardSubtitle}>ACTIVITY POINTS</Text>
-            <TouchableOpacity onPress={fetchHealthData} disabled={loading}>
+            <TouchableOpacity onPress={() => fetchHealthData(true)} disabled={loading}>
               {loading ? (
                 <ActivityIndicator size="small" color={colors.accentGreen} />
               ) : (
@@ -167,12 +206,53 @@ export default function MeScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Activity Ring */}
+          {/* Smooth Continuous 360-Degree Gradient Activity Ring */}
           <View style={styles.ringWrapper}>
-            <View style={styles.outerRing}>
-              <View style={styles.innerRing}>
+            <View style={styles.gradientRingOuter}>
+              {/* Top-Right Quadrant: Neon Light Green -> Cyan */}
+              <View style={styles.quadrantTopRight}>
+                <LinearGradient
+                  colors={['#B4F542', '#22D3EE']}
+                  start={{ x: 0.2, y: 0 }}
+                  end={{ x: 1, y: 0.8 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </View>
+
+              {/* Bottom-Right Quadrant: Cyan -> Soft Blue */}
+              <View style={styles.quadrantBottomRight}>
+                <LinearGradient
+                  colors={['#22D3EE', '#818CF8']}
+                  start={{ x: 1, y: 0.2 }}
+                  end={{ x: 0.2, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </View>
+
+              {/* Bottom-Left Quadrant: Soft Blue -> Vibrant Purple */}
+              <View style={styles.quadrantBottomLeft}>
+                <LinearGradient
+                  colors={['#818CF8', '#A855F7']}
+                  start={{ x: 0.8, y: 1 }}
+                  end={{ x: 0, y: 0.2 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </View>
+
+              {/* Top-Left Quadrant: Vibrant Purple -> Neon Light Green */}
+              <View style={styles.quadrantTopLeft}>
+                <LinearGradient
+                  colors={['#A855F7', '#B4F542']}
+                  start={{ x: 0, y: 0.8 }}
+                  end={{ x: 0.8, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </View>
+
+              {/* Inner Dark Mask Center */}
+              <View style={styles.gradientRingInnerCenter}>
                 <Text style={styles.pointsNumber}>{totalPoints}</Text>
-                <Text style={styles.pointsLabel}>pts</Text>
+                <Text style={styles.pointsLabelText}>Points</Text>
               </View>
             </View>
           </View>
@@ -185,74 +265,96 @@ export default function MeScreen() {
           </View>
         </View>
 
-        {/* TODAY'S METRICS Section */}
+        {/* TODAY'S METRICS Section - 2x2 Widget Grid */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>TODAY'S METRICS</Text>
         </View>
 
-        {/* 1. Step Count Card */}
-        <View style={styles.metricCard}>
-          <View style={styles.metricHeader}>
-            <View style={styles.metricIconBoxGreen}>
-              <Ionicons name="footsteps" size={20} color={colors.accentGreen} />
+        <View style={styles.widgetGrid2x2}>
+          {/* 1. Steps Widget */}
+          <View style={styles.widgetCard}>
+            <View style={styles.widgetTopRow}>
+              <View style={[styles.widgetIconBox, { backgroundColor: 'rgba(163, 230, 53, 0.15)', borderColor: 'rgba(163, 230, 53, 0.3)' }]}>
+                <Ionicons name="footsteps" size={18} color="#A3E635" />
+              </View>
+              <View style={[styles.widgetBadge, { backgroundColor: 'rgba(163, 230, 53, 0.15)' }]}>
+                <Text style={[styles.widgetBadgeText, { color: '#A3E635' }]}>{stepPercent}%</Text>
+              </View>
             </View>
-            <View style={styles.metricInfo}>
-              <Text style={styles.metricName}>Step Count</Text>
-              <Text style={styles.metricSubtext}>Daily Target: {STEP_GOAL.toLocaleString()} steps</Text>
+
+            <Text style={styles.widgetValue}>{steps.toLocaleString()}</Text>
+            <Text style={styles.widgetTitle}>Steps</Text>
+
+            <View style={styles.widgetProgressTrack}>
+              <View style={[styles.widgetProgressFill, { width: `${stepPercent}%`, backgroundColor: '#A3E635' }]} />
             </View>
-            <Text style={styles.metricValuePrimary}>{steps.toLocaleString()}</Text>
+            <Text style={styles.widgetSubtext}>{STEP_GOAL.toLocaleString()} target</Text>
           </View>
 
-          <View style={styles.metricProgressTrack}>
-            <View style={[styles.metricProgressFillGreen, { width: `${stepPercent}%` }]} />
-          </View>
-          <View style={styles.metricFooter}>
-            <Text style={styles.metricFooterText}>{stepPercent}% of goal</Text>
-            <Text style={styles.metricFooterGoal}>{STEP_GOAL.toLocaleString()} goal</Text>
-          </View>
-        </View>
+          {/* 2. Distance Travelled Widget */}
+          <View style={styles.widgetCard}>
+            <View style={styles.widgetTopRow}>
+              <View style={[styles.widgetIconBox, { backgroundColor: 'rgba(34, 211, 238, 0.15)', borderColor: 'rgba(34, 211, 238, 0.3)' }]}>
+                <Ionicons name="map-outline" size={18} color="#22D3EE" />
+              </View>
+              <View style={[styles.widgetBadge, { backgroundColor: 'rgba(34, 211, 238, 0.15)' }]}>
+                <Text style={[styles.widgetBadgeText, { color: '#22D3EE' }]}>{distPercent}%</Text>
+              </View>
+            </View>
 
-        {/* 2. Distance Travelled Card */}
-        <View style={styles.metricCard}>
-          <View style={styles.metricHeader}>
-            <View style={styles.metricIconBoxCyan}>
-              <Ionicons name="map" size={20} color={colors.accentCyan} />
-            </View>
-            <View style={styles.metricInfo}>
-              <Text style={styles.metricName}>Distance Travelled</Text>
-              <Text style={styles.metricSubtext}>Target: {DISTANCE_GOAL} km</Text>
-            </View>
-            <Text style={styles.metricValuePrimary}>{distanceKm} <Text style={styles.unitText}>km</Text></Text>
-          </View>
+            <Text style={styles.widgetValue}>
+              {distanceKm} <Text style={styles.widgetUnit}>km</Text>
+            </Text>
+            <Text style={styles.widgetTitle}>Distance Travelled</Text>
 
-          <View style={styles.metricProgressTrack}>
-            <View style={[styles.metricProgressFillCyan, { width: `${distPercent}%` }]} />
-          </View>
-          <View style={styles.metricFooter}>
-            <Text style={styles.metricFooterText}>{distPercent}% completed</Text>
-            <Text style={styles.metricFooterGoal}>{DISTANCE_GOAL} km goal</Text>
-          </View>
-        </View>
-
-        {/* 3. Floors Climbed Card */}
-        <View style={styles.metricCard}>
-          <View style={styles.metricHeader}>
-            <View style={styles.metricIconBoxPurple}>
-              <Ionicons name="trending-up" size={20} color={colors.accentPurple} />
+            <View style={styles.widgetProgressTrack}>
+              <View style={[styles.widgetProgressFill, { width: `${distPercent}%`, backgroundColor: '#22D3EE' }]} />
             </View>
-            <View style={styles.metricInfo}>
-              <Text style={styles.metricName}>Floors Climbed</Text>
-              <Text style={styles.metricSubtext}>Target: {FLOORS_GOAL} floors</Text>
-            </View>
-            <Text style={styles.metricValuePrimary}>{floorsClimbed} <Text style={styles.unitText}>/ {FLOORS_GOAL}</Text></Text>
+            <Text style={styles.widgetSubtext}>{DISTANCE_GOAL} km target</Text>
           </View>
 
-          <View style={styles.metricProgressTrack}>
-            <View style={[styles.metricProgressFillPurple, { width: `${floorPercent}%` }]} />
+          {/* 3. Floor Climbed Widget */}
+          <View style={styles.widgetCard}>
+            <View style={styles.widgetTopRow}>
+              <View style={[styles.widgetIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.15)', borderColor: 'rgba(139, 92, 246, 0.3)' }]}>
+                <Ionicons name="trending-up" size={18} color="#8B5CF6" />
+              </View>
+              <View style={[styles.widgetBadge, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
+                <Text style={[styles.widgetBadgeText, { color: '#A78BFA' }]}>{floorPercent}%</Text>
+              </View>
+            </View>
+
+            <Text style={styles.widgetValue}>
+              {floorsClimbed} <Text style={styles.widgetUnit}>floors</Text>
+            </Text>
+            <Text style={styles.widgetTitle}>Floor Climbed</Text>
+
+            <View style={styles.widgetProgressTrack}>
+              <View style={[styles.widgetProgressFill, { width: `${floorPercent}%`, backgroundColor: '#8B5CF6' }]} />
+            </View>
+            <Text style={styles.widgetSubtext}>{FLOORS_GOAL} floors target</Text>
           </View>
-          <View style={styles.metricFooter}>
-            <Text style={styles.metricFooterText}>{floorPercent}% of target</Text>
-            <Text style={styles.metricFooterGoal}>{FLOORS_GOAL} floors goal</Text>
+
+          {/* 4. Calorie Burned Widget */}
+          <View style={styles.widgetCard}>
+            <View style={styles.widgetTopRow}>
+              <View style={[styles.widgetIconBox, { backgroundColor: 'rgba(244, 63, 94, 0.15)', borderColor: 'rgba(244, 63, 94, 0.3)' }]}>
+                <Ionicons name="flame" size={18} color="#F43F5E" />
+              </View>
+              <View style={[styles.widgetBadge, { backgroundColor: 'rgba(244, 63, 94, 0.15)' }]}>
+                <Text style={[styles.widgetBadgeText, { color: '#FB7185' }]}>{caloriePercent}%</Text>
+              </View>
+            </View>
+
+            <Text style={styles.widgetValue}>
+              {Math.round(caloriesBurned)} <Text style={styles.widgetUnit}>kcal</Text>
+            </Text>
+            <Text style={styles.widgetTitle}>Calorie Burned</Text>
+
+            <View style={styles.widgetProgressTrack}>
+              <View style={[styles.widgetProgressFill, { width: `${caloriePercent}%`, backgroundColor: '#F43F5E' }]} />
+            </View>
+            <Text style={styles.widgetSubtext}>{CALORIES_GOAL} kcal target</Text>
           </View>
         </View>
       </ScrollView>
@@ -278,7 +380,7 @@ const styles = StyleSheet.create({
 
   container: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 20,
   },
   header: {
     flexDirection: 'row',
@@ -305,26 +407,26 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     letterSpacing: 1.2,
   },
+  headerLeftColumn: {
+    flexDirection: 'column',
+    gap: 4,
+  },
   headerTitle: {
     fontSize: 28,
     fontWeight: '800',
     color: colors.textPrimary,
   },
-  dateBadge: {
+  headerDateRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.cardSecondary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.cardBorderSubtle,
     gap: 6,
+    marginTop: 2,
   },
-  dateBadgeText: {
+  headerDateText: {
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '600',
+    letterSpacing: 0.5,
   },
   segmentContainer: {
     flexDirection: 'row',
@@ -377,32 +479,68 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   ringWrapper: {
-    marginBottom: 16,
-  },
-  outerRing: {
-    width: 136,
-    height: 136,
-    borderRadius: 68,
-    borderWidth: 8,
-    borderColor: colors.accentGreen,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accentGreenGlow,
+    marginVertical: 16,
   },
-  innerRing: {
+  gradientRingOuter: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    overflow: 'hidden',
+    position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  quadrantTopRight: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 80,
+    height: 80,
+  },
+  quadrantBottomRight: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 80,
+    height: 80,
+  },
+  quadrantBottomLeft: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    width: 80,
+    height: 80,
+  },
+  quadrantTopLeft: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 80,
+    height: 80,
+  },
+  gradientRingInnerCenter: {
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    backgroundColor: '#0B0F19',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
   },
   pointsNumber: {
-    fontSize: 44,
+    fontSize: 42,
     fontWeight: '800',
-    color: colors.textPrimary,
-    lineHeight: 48,
+    color: '#FFFFFF',
+    lineHeight: 46,
+    letterSpacing: -1,
   },
-  pointsLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.accentGreen,
+  pointsLabelText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#64748B',
+    marginTop: 2,
   },
   motivationalText: {
     fontSize: 17,
@@ -425,7 +563,7 @@ const styles = StyleSheet.create({
     color: colors.accentGreen,
   },
   sectionHeader: {
-    marginBottom: 12,
+    marginBottom: 8,
   },
   sectionTitle: {
     fontSize: 12,
@@ -433,102 +571,76 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     letterSpacing: 1.2,
   },
-  metricCard: {
+  widgetGrid2x2: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  widgetCard: {
+    width: '48%',
     backgroundColor: colors.card,
     borderRadius: 20,
-    padding: 18,
+    padding: 16,
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    marginBottom: 14,
+    marginBottom: 4,
   },
-  metricHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  metricIconBoxGreen: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: colors.accentGreenGlow,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  metricIconBoxCyan: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(6, 182, 212, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  metricIconBoxPurple: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(139, 92, 246, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  metricInfo: {
-    flex: 1,
-  },
-  metricName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  metricSubtext: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-  metricValuePrimary: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.textPrimary,
-  },
-  unitText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: colors.textSecondary,
-  },
-  metricProgressTrack: {
-    height: 6,
-    backgroundColor: colors.cardSecondary,
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  metricProgressFillGreen: {
-    height: '100%',
-    backgroundColor: colors.accentGreen,
-    borderRadius: 3,
-  },
-  metricProgressFillCyan: {
-    height: '100%',
-    backgroundColor: colors.accentCyan,
-    borderRadius: 3,
-  },
-  metricProgressFillPurple: {
-    height: '100%',
-    backgroundColor: colors.accentPurple,
-    borderRadius: 3,
-  },
-  metricFooter: {
+  widgetTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  metricFooterText: {
+  widgetIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  widgetBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  widgetBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  widgetValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    letterSpacing: -0.5,
+    marginBottom: 2,
+  },
+  widgetUnit: {
     fontSize: 12,
     fontWeight: '600',
     color: colors.textSecondary,
   },
-  metricFooterGoal: {
-    fontSize: 12,
+  widgetTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 10,
+  },
+  widgetProgressTrack: {
+    height: 5,
+    backgroundColor: colors.cardSecondary,
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  widgetProgressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  widgetSubtext: {
+    fontSize: 10,
+    fontWeight: '600',
     color: colors.textMuted,
   },
 });

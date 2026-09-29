@@ -3,7 +3,7 @@
  * Endpoint: POST /api/v1/activities
  */
 
-import { apiFetch, ApiResponse } from './client';
+import { apiFetch, ApiResponse, getActiveUserId } from './client';
 import { getHealthProvider } from '../health';
 import { fetchUserDashboard } from './user';
 import { getFriendlyErrorMessage } from '../utils/errorFormatter';
@@ -44,13 +44,14 @@ export async function submitActivity(
   payload: LogActivityPayload
 ): Promise<ApiResponse<LogActivityResponseData>> {
   const todayStr = new Date().toISOString().split('T')[0];
+  const targetUserId = payload.user_id || getActiveUserId() || 1;
 
   const requestBody = {
+    user_id: typeof targetUserId === 'string' ? parseInt(targetUserId, 10) || 1 : targetUserId,
     steps: Math.max(0, payload.steps || 0),
     calories: Math.max(0, payload.calories || 0),
     elevation: Math.max(0, payload.elevation || 0),
     activity_date: payload.activity_date || todayStr,
-    ...(payload.user_id ? { user_id: payload.user_id } : {}),
   };
 
   const response = await apiFetch<LogActivityResponseData>('/api/v1/activities', {
@@ -93,9 +94,10 @@ export async function syncNativeHealthKitActivity(
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
+    const targetUserId = userId || getActiveUserId() || 1;
 
     const result = await submitActivity({
-      user_id: userId,
+      user_id: targetUserId,
       steps: health.steps,
       calories: health.caloriesKcal || Math.round(health.steps * 0.04),
       elevation: health.floorsClimbed || Math.round(health.steps / 650),
@@ -108,7 +110,7 @@ export async function syncNativeHealthKitActivity(
       lastSyncedSteps = health.steps;
 
       // Revalidate User Dashboard cache after activity submission
-      fetchUserDashboard().catch(() => {});
+      fetchUserDashboard().catch(() => { });
 
       return {
         success: true,

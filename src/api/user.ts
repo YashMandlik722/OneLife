@@ -2,7 +2,7 @@
  * User & User Dashboard API Service with SWR Caching
  */
 
-import { apiFetch, ApiResponse } from './client';
+import { apiFetch, ApiResponse, setActiveUserId, getActiveUserId } from './client';
 import { fetchWithCache, TTL, getCache, setCache } from '../utils/cache';
 import { User, Department, Activity, PointTransaction } from '../types/database';
 
@@ -47,13 +47,38 @@ export interface UserDashboardData {
  * GET /api/v1/users/me
  */
 export async function fetchMeProfile(
-  onFreshData?: (user: User) => void
+  onFreshData?: (user: User) => void,
+  forceRefresh: boolean = false
 ): Promise<{ data: User | null; isCached: boolean; error?: string }> {
   return fetchWithCache<User>(
     'user_me_profile',
-    () => apiFetch<User>('/api/v1/users/me'),
+    async () => {
+      let res = await apiFetch<User>('/api/v1/users/me');
+      if (!res.success) {
+        // Fallback for demo/unauthenticated mode to active user ID profile
+        const activeId = getActiveUserId();
+        const fallbackRes = await apiFetch<any>(`/api/v1/users/${activeId}`);
+        if (fallbackRes.success && fallbackRes.data) {
+          const raw = fallbackRes.data;
+          const u = raw.user || raw;
+          const p = raw.points?.total ?? (typeof raw.points === 'number' ? raw.points : 0);
+          res = {
+            success: true,
+            data: { ...u, points: p },
+          };
+        }
+      }
+      if (res.success && res.data?.id) {
+        setActiveUserId(res.data.id);
+      }
+      return res;
+    },
     TTL.USER_PROFILE,
-    onFreshData
+    (freshUser) => {
+      if (freshUser?.id) setActiveUserId(freshUser.id);
+      if (onFreshData) onFreshData(freshUser);
+    },
+    forceRefresh
   );
 }
 
@@ -62,13 +87,32 @@ export async function fetchMeProfile(
  * GET /api/v1/users/me/dashboard
  */
 export async function fetchUserDashboard(
-  onFreshData?: (dashboard: UserDashboardData) => void
+  onFreshData?: (dashboard: UserDashboardData) => void,
+  forceRefresh: boolean = false
 ): Promise<{ data: UserDashboardData | null; isCached: boolean; error?: string }> {
   return fetchWithCache<UserDashboardData>(
     'user_me_dashboard',
-    () => apiFetch<UserDashboardData>('/api/v1/users/me/dashboard'),
+    async () => {
+      let res = await apiFetch<UserDashboardData>('/api/v1/users/me/dashboard');
+      if (!res.success) {
+        // Fallback for demo/unauthenticated mode to active user ID dashboard
+        const activeId = getActiveUserId();
+        const fallbackRes = await apiFetch<UserDashboardData>(`/api/v1/users/${activeId}/dashboard`);
+        if (fallbackRes.success && fallbackRes.data) {
+          res = fallbackRes;
+        }
+      }
+      if (res.success && res.data?.user?.id) {
+        setActiveUserId(res.data.user.id);
+      }
+      return res;
+    },
     TTL.DASHBOARD,
-    onFreshData
+    (freshDash) => {
+      if (freshDash?.user?.id) setActiveUserId(freshDash.user.id);
+      if (onFreshData) onFreshData(freshDash);
+    },
+    forceRefresh
   );
 }
 

@@ -13,7 +13,7 @@ const memoryCache = new Map<string, CacheEntry<any>>();
 export const TTL = {
   USER_PROFILE: 10 * 60 * 1000,  // 10 minutes
   DASHBOARD: 3 * 60 * 1000,      // 3 minutes
-  LEADERBOARD: 1 * 60 * 1000,    // 1 minute
+  LEADERBOARD: 5 * 60 * 1000,    // 5 minutes (300,000ms)
 };
 
 /**
@@ -44,42 +44,33 @@ export function getCache<T>(key: string): T | null {
 }
 
 /**
- * Execute API call using Stale-While-Revalidate (SWR):
- * 1. Returns cached data immediately if available.
- * 2. Fetches fresh data from API in background.
- * 3. Updates cache & notifies via callback on fresh data.
+ * Execute API call with RAM Caching:
+ * 1. Returns cached data immediately without network call if valid data exists in RAM.
+ * 2. Fetches from API only when cache is expired or forceRefresh is true.
  */
 export async function fetchWithCache<T>(
   cacheKey: string,
   fetchFn: () => Promise<{ success: boolean; data?: T; message?: string }>,
   ttlMs: number = TTL.DASHBOARD,
-  onFreshData?: (freshData: T) => void
+  onFreshData?: (freshData: T) => void,
+  forceRefresh: boolean = false
 ): Promise<{ data: T | null; isCached: boolean; error?: string }> {
-  // 1. Check cache first
-  const cachedData = getCache<T>(cacheKey);
-
-  // 2. Prepare API call
-  const apiPromise = fetchFn().then((res) => {
-    if (res.success && res.data) {
-      setCache(cacheKey, res.data, ttlMs);
-      if (onFreshData) {
-        onFreshData(res.data);
-      }
+  // 1. Check RAM cache first if forceRefresh is false
+  if (!forceRefresh) {
+    const cachedData = getCache<T>(cacheKey);
+    if (cachedData) {
+      // Return fresh RAM cached data without hitting network
+      return { data: cachedData, isCached: true };
     }
-    return res;
-  });
-
-  // If cached data is available, return it immediately and revalidate in background
-  if (cachedData) {
-    apiPromise.catch((err) => {
-      console.warn(`Background revalidation error [${cacheKey}]:`, err);
-    });
-    return { data: cachedData, isCached: true };
   }
 
-  // Otherwise wait for network response
-  const apiRes = await apiPromise;
+  // 2. Fetch from network when cache is missing/expired or forceRefresh is true
+  const apiRes = await fetchFn();
   if (apiRes.success && apiRes.data) {
+    setCache(cacheKey, apiRes.data, ttlMs);
+    if (onFreshData) {
+      onFreshData(apiRes.data);
+    }
     return { data: apiRes.data, isCached: false };
   }
 

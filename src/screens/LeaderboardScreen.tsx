@@ -1,25 +1,25 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   TouchableOpacity,
-  ScrollView,
-  ImageBackground,
+  FlatList,
   ActivityIndicator,
   Platform,
   Image,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 
 import {
   fetchUserLeaderboard,
   fetchDepartmentLeaderboard,
 } from '../api/leaderboard';
+import { getCache } from '../utils/cache';
 
 import { LeaderboardUserEntry, LeaderboardDepartmentEntry } from '../types/database';
 
@@ -28,29 +28,31 @@ const leaderboardBg = require('../../assets/leaderboard_bg.png');
 
 export default function LeaderboardScreen() {
   const [viewType, setViewType] = useState<'Individual' | 'Department'>('Individual');
-  const [userEntries, setUserEntries] = useState<LeaderboardUserEntry[]>([]);
-  const [deptEntries, setDeptEntries] = useState<LeaderboardDepartmentEntry[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  const loadLeaderboards = useCallback(async () => {
-    setLoading(true);
+  // Instant synchronous cache initialization to eliminate 2-3s navigation delay
+  const [userEntries, setUserEntries] = useState<LeaderboardUserEntry[]>(() => {
+    return getCache<LeaderboardUserEntry[]>('leaderboard_users') || [];
+  });
+  const [deptEntries, setDeptEntries] = useState<LeaderboardDepartmentEntry[]>(() => {
+    return getCache<LeaderboardDepartmentEntry[]>('leaderboard_departments') || [];
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    const cachedUsers = getCache<LeaderboardUserEntry[]>('leaderboard_users');
+    return !cachedUsers || cachedUsers.length === 0;
+  });
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  const loadLeaderboards = useCallback(async (forceRefresh: boolean = false) => {
     try {
-      // 1. Fetch User Leaderboard with SWR Cache
-      const userRes = await fetchUserLeaderboard((freshUsers) => {
-        if (freshUsers && freshUsers.length > 0) {
-          setUserEntries(freshUsers);
-        }
-      });
+      // Fetch both user & department leaderboards concurrently
+      const [userRes, deptRes] = await Promise.all([
+        fetchUserLeaderboard(undefined, undefined, forceRefresh),
+        fetchDepartmentLeaderboard(undefined, forceRefresh),
+      ]);
+
       if (userRes.data && userRes.data.length > 0) {
         setUserEntries(userRes.data);
       }
-
-      // 2. Fetch Department Leaderboard with SWR Cache
-      const deptRes = await fetchDepartmentLeaderboard((freshDepts) => {
-        if (freshDepts && freshDepts.length > 0) {
-          setDeptEntries(freshDepts);
-        }
-      });
       if (deptRes.data && deptRes.data.length > 0) {
         setDeptEntries(deptRes.data);
       }
@@ -58,26 +60,246 @@ export default function LeaderboardScreen() {
       console.warn('Failed to load leaderboards from API:', err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    loadLeaderboards();
+    loadLeaderboards(false);
+  }, [loadLeaderboards]);
+
+  const handlePullRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadLeaderboards(true);
   }, [loadLeaderboards]);
 
   const individualLeaderboard = userEntries;
   const departmentLeaderboard = deptEntries;
 
-  // Top 3 Podium Users
-  const rank1 = individualLeaderboard.find((u) => u.rank === 1);
-  const rank2 = individualLeaderboard.find((u) => u.rank === 2);
-  const rank3 = individualLeaderboard.find((u) => u.rank === 3);
+  // Memoized Rankings Calculations for 60fps Rendering
+  const rank1 = useMemo(() => individualLeaderboard.find((u) => u.rank === 1), [individualLeaderboard]);
+  const rank2 = useMemo(() => individualLeaderboard.find((u) => u.rank === 2), [individualLeaderboard]);
+  const rank3 = useMemo(() => individualLeaderboard.find((u) => u.rank === 3), [individualLeaderboard]);
+  const currentUser = useMemo(() => individualLeaderboard.find((u) => u.isCurrentUser) || individualLeaderboard[0], [individualLeaderboard]);
+  const remainingRankings = useMemo(() => individualLeaderboard.filter((u) => u.rank >= 4), [individualLeaderboard]);
 
-  // User position (dynamic current user)
-  const currentUser = individualLeaderboard.find((u) => u.isCurrentUser) || individualLeaderboard[0];
+  const renderUserRow = useCallback(({ item: user }: { item: LeaderboardUserEntry }) => {
+    const isUser = user.isCurrentUser;
+    return (
+      <View style={[styles.rankRow, isUser && styles.rankRowHighlight]}>
+        <Text style={[styles.rankNumber, isUser && styles.rankNumberUser]}>
+          {user.rank}
+        </Text>
 
-  // Remaining rankings (#4 onwards)
-  const remainingRankings = individualLeaderboard.filter((u) => u.rank >= 4);
+        <View
+          style={[
+            styles.rowAvatarCircle,
+            { backgroundColor: isUser ? '#A3E635' : '#1F293D' },
+          ]}
+        >
+          <Text style={[styles.rowAvatarText, isUser && styles.rowAvatarTextUser]}>
+            {user.initials}
+          </Text>
+        </View>
+
+        <View style={styles.rowInfoCol}>
+          <Text style={styles.rowName}>{user.name}</Text>
+          <Text style={styles.rowDept}>
+            {user.departmentName}
+            {isUser ? <Text style={styles.youHighlight}> · You</Text> : ''}
+          </Text>
+        </View>
+
+        <View style={styles.rowPointsCol}>
+          <Text style={styles.rowPoints}>{user.points.toLocaleString()}</Text>
+          {isUser && user.deltaToday ? (
+            <View style={styles.rowDeltaRow}>
+              <Ionicons name="arrow-up" size={10} color={colors.accentGreen} />
+              <Text style={styles.rowDeltaText}>+{user.deltaToday}</Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    );
+  }, []);
+
+  const renderDeptRow = useCallback(({ item: dept }: { item: LeaderboardDepartmentEntry }) => {
+    return (
+      <View style={styles.rankRow}>
+        <View style={[styles.deptRankBadge, { backgroundColor: dept.color }]}>
+          <Text style={styles.deptRankBadgeText}>#{dept.rank}</Text>
+        </View>
+        <View style={styles.rowInfoCol}>
+          <Text style={styles.rowName}>{dept.name}</Text>
+          <Text style={styles.rowDept}>{dept.membersCount} active members</Text>
+        </View>
+        <Text style={styles.rowPoints}>{dept.points.toLocaleString()} pts</Text>
+      </View>
+    );
+  }, []);
+
+  const ListHeader = useMemo(() => {
+    return (
+      <View>
+        {/* TOP HERO CONTAINER */}
+        <View style={styles.heroBackground}>
+          <View style={styles.heroContent}>
+            {/* Header Row */}
+            <View style={styles.headerRow}>
+              <View>
+                <Text style={styles.headerTitle}>Leaderboard</Text>
+              </View>
+
+              <View style={styles.headerRightActions}>
+                <Image
+                  source={require('../../assets/OneLifeInAppLogo.png')}
+                  style={styles.topRightLogo}
+                  resizeMode="contain"
+                />
+              </View>
+            </View>
+
+            {/* Segmented Control */}
+            <View style={styles.toggleContainer}>
+              <TouchableOpacity
+                style={[styles.toggleTab, viewType === 'Individual' && styles.activeToggleTab]}
+                onPress={() => setViewType('Individual')}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    viewType === 'Individual' && styles.activeToggleText,
+                  ]}
+                >
+                  Individual
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.toggleTab, viewType === 'Department' && styles.activeToggleTab]}
+                onPress={() => setViewType('Department')}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    viewType === 'Department' && styles.activeToggleText,
+                  ]}
+                >
+                  Department
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {viewType === 'Individual' ? (
+              /* TOP 3 PODIUM OVER COSMIC MOUNTAIN */
+              <View style={styles.podiumRow}>
+                {/* Rank #2 (Left - Jon Okafor) */}
+                {rank2 ? (
+                  <View style={[styles.podiumCol, styles.podiumColSide]}>
+                    <View style={styles.avatarWrapper}>
+                      <View style={[styles.rankBadge, { backgroundColor: '#94A3B8' }]}>
+                        <Text style={styles.rankBadgeText}>2</Text>
+                      </View>
+                      <View style={[styles.avatarCircle, { backgroundColor: '#8B5CF6' }]}>
+                        <Text style={styles.avatarText}>{rank2.initials}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.podiumName} numberOfLines={1}>
+                      {rank2.name}
+                    </Text>
+                    <View style={[styles.pointsPill, { backgroundColor: 'rgba(139, 92, 246, 0.35)' }]}>
+                      <Text style={[styles.pointsPillText, { color: '#C4B5FD' }]}>
+                        {rank2.points.toLocaleString()} pts
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                {/* Rank #1 (Center - Nina Patel) */}
+                {rank1 ? (
+                  <View style={[styles.podiumCol, styles.podiumColCenter]}>
+                    <View style={styles.avatarWrapperCenter}>
+                      <View style={[styles.rankBadgeCenter, { backgroundColor: '#A3E635' }]}>
+                        <Text style={styles.rankBadgeTextCenter}>1</Text>
+                      </View>
+                      <View style={[styles.avatarCircleCenter, { backgroundColor: '#22D3EE' }]}>
+                        <Text style={styles.avatarTextCenter}>{rank1.initials}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.podiumNameCenter} numberOfLines={1}>
+                      {rank1.name}
+                    </Text>
+                    <View style={[styles.pointsPillCenter, { backgroundColor: 'rgba(34, 211, 238, 0.35)' }]}>
+                      <Text style={[styles.pointsPillTextCenter, { color: '#67E8F9' }]}>
+                        {rank1.points.toLocaleString()} pts
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                {/* Rank #3 (Right - Elena Cruz) */}
+                {rank3 ? (
+                  <View style={[styles.podiumCol, styles.podiumColSide]}>
+                    <View style={styles.avatarWrapper}>
+                      <View style={[styles.rankBadge, { backgroundColor: '#F97316' }]}>
+                        <Text style={[styles.rankBadgeText, { color: '#FFFFFF' }]}>3</Text>
+                      </View>
+                      <View style={[styles.avatarCircle, { backgroundColor: '#F43F5E' }]}>
+                        <Text style={styles.avatarText}>{rank3.initials}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.podiumName} numberOfLines={1}>
+                      {rank3.name}
+                    </Text>
+                    <View style={[styles.pointsPill, { backgroundColor: 'rgba(244, 63, 94, 0.35)' }]}>
+                      <Text style={[styles.pointsPillText, { color: '#FDA4AF' }]}>
+                        {rank3.points.toLocaleString()} pts
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        </View>
+
+        {/* YOUR POSITION BANNER WITH CYAN TOP DIVIDER */}
+        {viewType === 'Individual' && currentUser ? (
+          <View style={styles.yourPositionCard}>
+            <Text style={styles.posTag}>YOUR POSITION</Text>
+            <View style={styles.posBodyRow}>
+              <View style={styles.posLeft}>
+                <Text style={styles.posRankText}>#{currentUser.rank}</Text>
+                <View style={styles.posDeltaRow}>
+                  <Ionicons name="arrow-up" size={14} color={colors.accentGreen} />
+                  <Text style={styles.posDeltaText}>{currentUser.deltaToday} today</Text>
+                </View>
+              </View>
+
+              <View style={styles.posRight}>
+                <Text style={styles.posPointsText}>{currentUser.points.toLocaleString()} pts</Text>
+                <Text style={styles.posGapText}>
+                  {currentUser.pointsBehindPrev} pts behind #{currentUser.rank - 1}
+                </Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
+        {/* SECTION HEADER TITLE */}
+        <View style={styles.rankingsHeaderRowContainer}>
+          <View style={styles.rankingsHeaderRow}>
+            <Text style={styles.rankingsTitle}>
+              {viewType === 'Individual' ? 'ALL RANKINGS' : 'DEPARTMENT OVERVIEW'}
+            </Text>
+            <Text style={styles.liveTag}>Live</Text>
+          </View>
+        </View>
+      </View>
+    );
+  }, [viewType, rank1, rank2, rank3, currentUser]);
 
   if (loading && userEntries.length === 0 && deptEntries.length === 0) {
     return (
@@ -94,250 +316,32 @@ export default function LeaderboardScreen() {
 
   return (
 
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar style="light" />
       <View style={styles.container}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
+        <FlatList
+          data={viewType === 'Individual' ? (remainingRankings as any[]) : (departmentLeaderboard as any[])}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={viewType === 'Individual' ? (renderUserRow as any) : (renderDeptRow as any)}
+          ListHeaderComponent={ListHeader}
+          initialNumToRender={8}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
           showsVerticalScrollIndicator={false}
-          bounces={false}
-        >
-          {/* TOP HERO CONTAINER */}
-          <View style={styles.heroBackground}>
-            <View style={styles.heroContent}>
-              {/* Header Row */}
-
-
-              <View style={styles.headerRow}>
-                <View>
-                  <Text style={styles.headerTitle}>Leaderboard</Text>
-                </View>
-
-                <View style={styles.headerRightActions}>
-                  <TouchableOpacity style={styles.infoButton} onPress={loadLeaderboards} disabled={loading} activeOpacity={0.7}>
-                    {loading ? (
-                      <ActivityIndicator size="small" color="#22D3EE" />
-                    ) : (
-                      <Ionicons name="refresh-outline" size={20} color="#9CA3AF" />
-                    )}
-                  </TouchableOpacity>
-                  <Image
-                    source={require('../../assets/OneLifeInAppLogo.png')}
-                    style={styles.topRightLogo}
-                    resizeMode="contain"
-                  />
-                </View>
-              </View>
-
-
-              {/* Segmented Control */}
-              <View style={styles.toggleContainer}>
-                <TouchableOpacity
-                  style={[styles.toggleTab, viewType === 'Individual' && styles.activeToggleTab]}
-                  onPress={() => setViewType('Individual')}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={[
-                      styles.toggleText,
-                      viewType === 'Individual' && styles.activeToggleText,
-                    ]}
-                  >
-                    Individual
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.toggleTab, viewType === 'Department' && styles.activeToggleTab]}
-                  onPress={() => setViewType('Department')}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={[
-                      styles.toggleText,
-                      viewType === 'Department' && styles.activeToggleText,
-                    ]}
-                  >
-                    Department
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {viewType === 'Individual' ? (
-                /* TOP 3 PODIUM OVER COSMIC MOUNTAIN */
-                <View style={styles.podiumRow}>
-                  {/* Rank #2 (Left - Jon Okafor) */}
-                  {rank2 ? (
-                    <View style={[styles.podiumCol, styles.podiumColSide]}>
-                      <View style={styles.avatarWrapper}>
-                        <View style={[styles.rankBadge, { backgroundColor: '#94A3B8' }]}>
-                          <Text style={styles.rankBadgeText}>2</Text>
-                        </View>
-                        <View style={[styles.avatarCircle, { backgroundColor: '#8B5CF6' }]}>
-                          <Text style={styles.avatarText}>{rank2.initials}</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.podiumName} numberOfLines={1}>
-                        {rank2.name}
-                      </Text>
-                      <View style={[styles.pointsPill, { backgroundColor: 'rgba(139, 92, 246, 0.35)' }]}>
-                        <Text style={[styles.pointsPillText, { color: '#C4B5FD' }]}>
-                          {rank2.points.toLocaleString()} pts
-                        </Text>
-                      </View>
-                    </View>
-                  ) : null}
-
-                  {/* Rank #1 (Center - Nina Patel) */}
-                  {rank1 ? (
-                    <View style={[styles.podiumCol, styles.podiumColCenter]}>
-                      <View style={styles.avatarWrapperCenter}>
-                        <View style={[styles.rankBadgeCenter, { backgroundColor: '#A3E635' }]}>
-                          <Text style={styles.rankBadgeTextCenter}>1</Text>
-                        </View>
-                        <View style={[styles.avatarCircleCenter, { backgroundColor: '#22D3EE' }]}>
-                          <Text style={styles.avatarTextCenter}>{rank1.initials}</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.podiumNameCenter} numberOfLines={1}>
-                        {rank1.name}
-                      </Text>
-                      <View style={[styles.pointsPillCenter, { backgroundColor: 'rgba(34, 211, 238, 0.35)' }]}>
-                        <Text style={[styles.pointsPillTextCenter, { color: '#67E8F9' }]}>
-                          {rank1.points.toLocaleString()} pts
-                        </Text>
-                      </View>
-                    </View>
-                  ) : null}
-
-                  {/* Rank #3 (Right - Elena Cruz) */}
-                  {rank3 ? (
-                    <View style={[styles.podiumCol, styles.podiumColSide]}>
-                      <View style={styles.avatarWrapper}>
-                        <View style={[styles.rankBadge, { backgroundColor: '#F97316' }]}>
-                          <Text style={[styles.rankBadgeText, { color: '#FFFFFF' }]}>3</Text>
-                        </View>
-                        <View style={[styles.avatarCircle, { backgroundColor: '#F43F5E' }]}>
-                          <Text style={styles.avatarText}>{rank3.initials}</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.podiumName} numberOfLines={1}>
-                        {rank3.name}
-                      </Text>
-                      <View style={[styles.pointsPill, { backgroundColor: 'rgba(244, 63, 94, 0.35)' }]}>
-                        <Text style={[styles.pointsPillText, { color: '#FDA4AF' }]}>
-                          {rank3.points.toLocaleString()} pts
-                        </Text>
-                      </View>
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
-            </View>
-          </View>
-
-
-
-          {/* YOUR POSITION BANNER WITH CYAN TOP DIVIDER */}
-          {viewType === 'Individual' && currentUser ? (
-            <View style={styles.yourPositionCard}>
-              <Text style={styles.posTag}>YOUR POSITION</Text>
-              <View style={styles.posBodyRow}>
-                <View style={styles.posLeft}>
-                  <Text style={styles.posRankText}>#{currentUser.rank}</Text>
-                  <View style={styles.posDeltaRow}>
-                    <Ionicons name="arrow-up" size={14} color={colors.accentGreen} />
-                    <Text style={styles.posDeltaText}>{currentUser.deltaToday} today</Text>
-                  </View>
-                </View>
-
-                <View style={styles.posRight}>
-                  <Text style={styles.posPointsText}>{currentUser.points.toLocaleString()} pts</Text>
-                  <Text style={styles.posGapText}>
-                    {currentUser.pointsBehindPrev} pts behind #{currentUser.rank - 1}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          ) : null}
-
-          {/* ALL RANKINGS / DEPARTMENT LIST SECTION */}
-          <View style={styles.listSectionContainer}>
-            {viewType === 'Individual' ? (
-              <>
-                <View style={styles.rankingsHeaderRow}>
-                  <Text style={styles.rankingsTitle}>ALL RANKINGS</Text>
-                  <Text style={styles.liveTag}>Live</Text>
-                </View>
-
-                <View style={styles.rankingsList}>
-                  {remainingRankings.map((user) => {
-                    const isUser = user.isCurrentUser;
-                    return (
-                      <View
-                        key={user.id}
-                        style={[styles.rankRow, isUser && styles.rankRowHighlight]}
-                      >
-                        <Text style={[styles.rankNumber, isUser && styles.rankNumberUser]}>
-                          {user.rank}
-                        </Text>
-
-                        <View
-                          style={[
-                            styles.rowAvatarCircle,
-                            { backgroundColor: isUser ? '#A3E635' : '#1F293D' },
-                          ]}
-                        >
-                          <Text style={[styles.rowAvatarText, isUser && styles.rowAvatarTextUser]}>
-                            {user.initials}
-                          </Text>
-                        </View>
-
-                        <View style={styles.rowInfoCol}>
-                          <Text style={styles.rowName}>{user.name}</Text>
-                          <Text style={styles.rowDept}>
-                            {user.departmentName}
-                            {isUser ? <Text style={styles.youHighlight}> · You</Text> : ''}
-                          </Text>
-                        </View>
-
-                        <View style={styles.rowPointsCol}>
-                          <Text style={styles.rowPoints}>{user.points.toLocaleString()}</Text>
-                          {isUser && user.deltaToday ? (
-                            <View style={styles.rowDeltaRow}>
-                              <Ionicons name="arrow-up" size={10} color={colors.accentGreen} />
-                              <Text style={styles.rowDeltaText}>+{user.deltaToday}</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              </>
-            ) : (
-              /* DEPARTMENT RANKINGS VIEW */
-              <View style={styles.deptSection}>
-                <View style={styles.rankingsHeaderRow}>
-                  <Text style={styles.rankingsTitle}>DEPARTMENT OVERVIEW</Text>
-                  <Text style={styles.liveTag}>Live</Text>
-                </View>
-                {departmentLeaderboard.map((dept) => (
-                  <View key={dept.id} style={styles.rankRow}>
-                    <View style={[styles.deptRankBadge, { backgroundColor: dept.color }]}>
-                      <Text style={styles.deptRankBadgeText}>#{dept.rank}</Text>
-                    </View>
-                    <View style={styles.rowInfoCol}>
-                      <Text style={styles.rowName}>{dept.name}</Text>
-                      <Text style={styles.rowDept}>{dept.membersCount} active members</Text>
-                    </View>
-                    <Text style={styles.rowPoints}>{dept.points.toLocaleString()} pts</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
-        </ScrollView>
+          contentContainerStyle={styles.scrollContent}
+          style={{ flex: 1 }}
+          ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handlePullRefresh}
+              tintColor="#22D3EE"
+              colors={['#22D3EE', '#A3E635']}
+              progressBackgroundColor="#090D15"
+            />
+          }
+        />
       </View>
     </SafeAreaView>
   );
@@ -632,8 +636,9 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginTop: 2,
   },
-  listSectionContainer: {
+  rankingsHeaderRowContainer: {
     paddingHorizontal: 20,
+    marginBottom: 8,
   },
   rankingsHeaderRow: {
     flexDirection: 'row',
