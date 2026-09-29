@@ -96,60 +96,13 @@ interface AiSprintModalProps {
 // -----------------------------------------------------------------------------
 
 function NativeAIProcessingIntro() {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const rotateAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const pulseAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.15,
-          duration: 900,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 0.95,
-          duration: 900,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-
-    const rotateAnimation = Animated.loop(
-      Animated.timing(rotateAnim, {
-        toValue: 1,
-        duration: 4000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    );
-
-    pulseAnimation.start();
-    rotateAnimation.start();
-
-    return () => {
-      pulseAnimation.stop();
-      rotateAnimation.stop();
-    };
-  }, [pulseAnim, rotateAnim]);
-
-  const spin = rotateAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
   return (
     <SafeAreaView style={[styles.safeArea, styles.aiIntroContainer]}>
       <StatusBar style="light" />
       <View style={styles.aiIntroContent}>
-        <Animated.View
-          style={{
-            transform: [{ scale: pulseAnim }, { rotate: spin }],
-            marginBottom: 20,
-          }}
-        >
+        <View style={{ marginBottom: 20 }}>
           <AIProcessingAnimation width={260} height={260} />
-        </Animated.View>
+        </View>
         <Text style={styles.aiIntroTitle}>OLYMPUS AI</Text>
         <Text style={styles.aiIntroSubtitle}>Initializing Biometric Performance Engine...</Text>
         <ActivityIndicator size="small" color={colors.accentGreen} style={{ marginTop: 24 }} />
@@ -471,16 +424,28 @@ function AiSprintModal({ visible, latestAiChallenge, onClose }: AiSprintModalPro
 // -----------------------------------------------------------------------------
 
 export default function ChallengeScreen() {
-  // Intro processing animation state (shows for 4s on initial mount)
+  // Intro processing animation state
   const [showIntroAnimation, setShowIntroAnimation] = useState<boolean>(true);
 
+  // Synchronization refs for smooth single-transition lifecycle
+  const minIntroDoneRef = useRef<boolean>(false);
+  const initDoneRef = useRef<boolean>(false);
+
+  const checkTransition = useCallback(() => {
+    if (minIntroDoneRef.current && initDoneRef.current) {
+      setShowIntroAnimation(false);
+    }
+  }, []);
+
+  // Minimum intro display duration (1800ms) so animation is wowed without double loading
   useEffect(() => {
     const timer = setTimeout(() => {
-      setShowIntroAnimation(false);
-    }, 4000); // Doubled duration from 2s to 4s
+      minIntroDoneRef.current = true;
+      checkTransition();
+    }, 1800);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [checkTransition]);
 
   // State
   const [healthData, setHealthData] = useState<HealthData | null>(null);
@@ -550,8 +515,10 @@ export default function ChallengeScreen() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      initDoneRef.current = true;
+      checkTransition();
     }
-  }, [loadChallenges, healthData, activeChallenge]);
+  }, [loadChallenges, healthData, activeChallenge, checkTransition]);
 
   useEffect(() => {
     syncHealthData();
@@ -562,12 +529,12 @@ export default function ChallengeScreen() {
     await syncHealthData();
   }, [syncHealthData]);
 
-  // 1. Native Intro AI Processing Animation (shows for 4s on mount)
+  // 1. Native Intro AI Processing Animation (shows during background initialization + min display time)
   if (showIntroAnimation) {
     return <NativeAIProcessingIntro />;
   }
 
-  // 2. Loading View (if data is still fetching after intro animation)
+  // 2. Loading View (fallback if data sync occurs after intro has dismissed)
   if (loading && !healthData && !activeChallenge) {
     return <LoadingScreen message="Syncing Live Challenge & Health Data..." />;
   }
