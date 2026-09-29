@@ -1,15 +1,30 @@
 {
   "expo": {
-    "name": "olympus-poc",
-    "slug": "olympus-poc",
+    "name": "OneLife",
+    "slug": "onelife",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.commitissues.onelife",
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "This app requires HealthKit access to read your daily step count.",
+        "NSHealthUpdateUsageDescription": "This app requires HealthKit access to read your daily step count."
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true
+      }
     },
     "android": {
+      "package": "com.commitissues.onelife",
+      "permissions": [
+        "android.permission.health.READ_STEPS",
+        "android.permission.health.READ_DISTANCE",
+        "android.permission.health.READ_FLOORS_CLIMBED",
+        "android.permission.health.READ_ACTIVE_CALORIES_BURNED"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -20,6 +35,28 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-dev-client",
+      [
+        "react-native-health",
+        {
+          "healthSharePermission": "This app requires HealthKit access to read your daily step count."
+        }
+      ],
+      "react-native-health-connect",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          },
+          "ios": {
+            "useFrameworks": "static",
+            "useSwiftPackageManager": true
+          }
+        }
+      ]
+    ]
   }
 }
