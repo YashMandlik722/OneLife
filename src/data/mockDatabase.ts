@@ -66,28 +66,28 @@ export function getIndividualLeaderboardFromDB(): LeaderboardUserEntry[] {
   // Aggregate user points
   const pointsMap = new Map<string, number>();
   mockPointTransactions.forEach((pt) => {
-    pointsMap.set(pt.user_id, (pointsMap.get(pt.user_id) || 0) + pt.points);
+    pointsMap.set(String(pt.user_id), (pointsMap.get(String(pt.user_id)) || 0) + pt.points);
   });
 
   const deptMap = new Map<string, string>();
-  mockDepartments.forEach((d) => deptMap.set(d.id, d.name));
+  mockDepartments.forEach((d) => deptMap.set(String(d.id), d.name));
 
   const sortedUsers = [...mockUsers].sort((a, b) => {
-    const ptsA = pointsMap.get(a.id) || 0;
-    const ptsB = pointsMap.get(b.id) || 0;
+    const ptsA = pointsMap.get(String(a.id)) || 0;
+    const ptsB = pointsMap.get(String(b.id)) || 0;
     return ptsB - ptsA;
   });
 
   return sortedUsers.map((user, index) => {
     const rank = index + 1;
-    const pts = pointsMap.get(user.id) || 0;
-    const deptName = deptMap.get(user.department_id) || 'General';
+    const pts = pointsMap.get(String(user.id)) || 0;
+    const deptName = user.department_id ? (deptMap.get(String(user.department_id)) || 'General') : 'General';
 
     // Extract initials
     const nameParts = user.name.split(' ');
     const initials = nameParts.map((p) => p[0]).join('').toUpperCase();
 
-    const isCurrentUser = user.id === 'u8' || user.email === 'jon.doe@example.com';
+    const isCurrentUser = String(user.id) === 'u8' || user.email === 'jon.doe@example.com';
 
     let avatarBgColor = '#27344D';
     let avatarTextColor = '#FFFFFF';
@@ -121,7 +121,7 @@ export function getIndividualLeaderboardFromDB(): LeaderboardUserEntry[] {
     // Prev rank point gap
     let pointsBehindPrev = 0;
     if (index > 0) {
-      const prevPts = pointsMap.get(sortedUsers[index - 1].id) || 0;
+      const prevPts = pointsMap.get(String(sortedUsers[index - 1].id)) || 0;
       pointsBehindPrev = prevPts - pts;
     }
 
@@ -152,13 +152,17 @@ export function getDepartmentLeaderboardFromDB(): LeaderboardDepartmentEntry[] {
   const deptMembers = new Map<string, number>();
 
   mockUsers.forEach((user) => {
-    deptMembers.set(user.department_id, (deptMembers.get(user.department_id) || 0) + 1);
+    if (user.department_id) {
+      const dKey = String(user.department_id);
+      deptMembers.set(dKey, (deptMembers.get(dKey) || 0) + 1);
+    }
   });
 
   mockPointTransactions.forEach((pt) => {
     const user = mockUsers.find((u) => u.id === pt.user_id);
-    if (user) {
-      deptPoints.set(user.department_id, (deptPoints.get(user.department_id) || 0) + pt.points);
+    if (user && user.department_id) {
+      const dKey = String(user.department_id);
+      deptPoints.set(dKey, (deptPoints.get(dKey) || 0) + pt.points);
     }
   });
 
@@ -168,8 +172,8 @@ export function getDepartmentLeaderboardFromDB(): LeaderboardDepartmentEntry[] {
     .map((dept) => ({
       id: dept.id,
       name: dept.name,
-      membersCount: deptMembers.get(dept.id) || 0,
-      points: deptPoints.get(dept.id) || 0,
+      membersCount: deptMembers.get(String(dept.id)) || 0,
+      points: deptPoints.get(String(dept.id)) || 0,
     }))
     .sort((a, b) => b.points - a.points);
 

@@ -3,78 +3,79 @@
  */
 
 export interface Department {
-  id: string;
+  id: string | number;
   name: string;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface User {
-  id: string;
+  id: string | number;
   name: string;
   email: string;
-  department_id: string;
-  created_at: string;
+  department_id?: string | number;
+  department?: Department;
+  created_at?: string;
 }
 
 export interface Team {
-  id: string;
+  id: string | number;
   name: string;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface TeamMember {
-  id: string;
-  team_id: string;
-  user_id: string;
-  joined_at: string;
+  id: string | number;
+  team_id: string | number;
+  user_id: string | number;
+  joined_at?: string;
 }
 
 export interface Challenge {
-  id: string;
-  team_id: string;
+  id: string | number;
+  team_id: string | number;
   title: string;
   description: string;
   target_value: number;
   target_unit: string;
   points: number;
   status: 'ACTIVE' | 'COMPLETED' | 'UPCOMING';
-  created_at: string;
+  created_at?: string;
 }
 
 export interface ChallengeProgress {
-  id: string;
-  challenge_id: string;
-  user_id: string;
+  id: string | number;
+  challenge_id: string | number;
+  user_id: string | number;
   current_value: number;
   completed: boolean;
   completed_at?: string | null;
-  updated_at: string;
+  updated_at?: string;
 }
 
 export interface Activity {
-  id: string;
-  user_id: string;
+  id: string | number;
+  user_id: string | number;
   steps: number;
   calories: number;
   elevation: number;
   activity_date: string;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface PointTransaction {
-  id: string;
-  user_id: string;
-  team_id?: string | null;
+  id: string | number;
+  user_id?: string | number | null;
+  team_id?: string | number | null;
   points: number;
   reason: string;
-  created_at: string;
+  created_at?: string;
 }
 
 /**
  * Derived Models for UI Presentation
  */
 export interface LeaderboardUserEntry {
-  id: string;
+  id: string | number;
   rank: number;
   name: string;
   initials: string;
@@ -91,7 +92,7 @@ export interface LeaderboardUserEntry {
 }
 
 export interface LeaderboardDepartmentEntry {
-  id: string;
+  id: string | number;
   rank: number;
   name: string;
   membersCount: number;

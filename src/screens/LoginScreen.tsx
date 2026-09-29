@@ -5,28 +5,61 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
+  Image,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+
+
+import { requestOtp, DEMO_MODE_BYPASS } from '../api/auth';
+import { getFriendlyErrorMessage } from '../utils/errorFormatter';
 
 interface LoginScreenProps {
   onSendOtp: (email: string) => void;
 }
 
 export default function LoginScreen({ onSendOtp }: LoginScreenProps) {
-  const [email, setEmail] = useState('jon.doe@example.com');
+  const [email, setEmail] = useState('yash.mandlik@digivalet.com');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSendOtp = () => {
+  const handleSendOtp = async () => {
     if (!email || !email.includes('@')) {
       setError('Please enter a valid work email address.');
       return;
     }
     setError('');
-    onSendOtp(email);
+    setLoading(true);
+
+    try {
+      const res = await requestOtp(email);
+      setLoading(false);
+
+      if (res.success) {
+        onSendOtp(email);
+      } else {
+        if (DEMO_MODE_BYPASS) {
+          console.warn('[DemoMode] Request OTP returned error, proceeding to verification:', res.message);
+          onSendOtp(email);
+        } else {
+          const friendlyError = getFriendlyErrorMessage(res.message, undefined, 'login');
+          setError(friendlyError);
+        }
+      }
+    } catch (err: any) {
+      setLoading(false);
+      if (DEMO_MODE_BYPASS) {
+        console.warn('[DemoMode] Network error in requestOtp, proceeding to verification:', err?.message);
+        onSendOtp(email);
+      } else {
+        const friendlyError = getFriendlyErrorMessage(err?.message, undefined, 'login');
+        setError(friendlyError);
+      }
+    }
   };
 
   return (
@@ -38,11 +71,13 @@ export default function LoginScreen({ onSendOtp }: LoginScreenProps) {
         <View style={styles.content}>
           {/* Logo / Badge */}
           <View style={styles.logoContainer}>
-            <View style={styles.logoGlow} />
-            <View style={styles.logoBadge}>
-              <Ionicons name="fitness" size={36} color={colors.accentGreen} />
-            </View>
+            <Image
+              source={require('../../assets/OneLifeInAppLogo.png')}
+              style={styles.loginInAppLogo}
+              resizeMode="contain"
+            />
           </View>
+
 
           {/* Header */}
           <View style={styles.header}>
@@ -75,20 +110,27 @@ export default function LoginScreen({ onSendOtp }: LoginScreenProps) {
 
             {/* Submit Button */}
             <TouchableOpacity
-              style={styles.button}
+              style={[styles.button, loading ? { opacity: 0.7 } : null]}
               onPress={handleSendOtp}
+              disabled={loading}
               activeOpacity={0.8}
             >
-              <Text style={styles.buttonText}>Send OTP</Text>
-              <Ionicons name="arrow-forward" size={18} color={colors.textDark} style={styles.buttonIcon} />
+              {loading ? (
+                <ActivityIndicator color={colors.textDark} />
+              ) : (
+                <>
+                  <Text style={styles.buttonText}>Send OTP</Text>
+                  <Ionicons name="arrow-forward" size={18} color={colors.textDark} style={styles.buttonIcon} />
+                </>
+              )}
             </TouchableOpacity>
           </View>
 
-          {/* Demo Callout */}
+          {/* Callout */}
           <View style={styles.demoCallout}>
-            <Ionicons name="information-circle-outline" size={18} color={colors.accentGreen} />
+            <Ionicons name="shield-checkmark-outline" size={18} color={colors.accentGreen} />
             <Text style={styles.demoText}>
-              <Text style={styles.demoBold}>Demo Mode: </Text>Pre-filled with static credentials for instant walkthrough.
+              <Text style={styles.demoBold}>Secure Login: </Text>OTP verification required via API.
             </Text>
           </View>
         </View>
@@ -112,9 +154,13 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 32,
-    position: 'relative',
+    marginBottom: 24,
   },
+  loginInAppLogo: {
+    width: 100,
+    height: 100,
+  },
+
   logoGlow: {
     position: 'absolute',
     width: 80,

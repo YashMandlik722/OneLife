@@ -5,12 +5,17 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
+  StatusBar as StatusBarNative,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+
+import { verifyOtp, requestOtp, DEMO_MODE_BYPASS } from '../api/auth';
+import { getFriendlyErrorMessage } from '../utils/errorFormatter';
 
 interface VerifyOtpScreenProps {
   email: string;
@@ -19,13 +24,16 @@ interface VerifyOtpScreenProps {
 }
 
 export default function VerifyOtpScreen({
-  email = 'jon.doe@example.com',
+  email = 'yash.mandlik@digivalet.com',
   onVerifySuccess,
   onBack,
 }: VerifyOtpScreenProps) {
-  // Hardcoded default 6-digit OTP: ['1', '2', '3', '4', '5', '6']
+  // Pre-filled 6-digit OTP boxes for rapid demo testing
   const [otp, setOtp] = useState<string[]>(['1', '2', '3', '4', '5', '6']);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [infoMessage, setInfoMessage] = useState('');
   const inputRefs = useRef<Array<TextInput | null>>([]);
 
   const handleOtpChange = (text: string, index: number) => {
@@ -34,6 +42,7 @@ export default function VerifyOtpScreen({
     setOtp(newOtp);
 
     if (error) setError('');
+    if (infoMessage) setInfoMessage('');
 
     // Auto focus next box
     if (text && index < 5) {
@@ -47,18 +56,61 @@ export default function VerifyOtpScreen({
     }
   };
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
     const fullCode = otp.join('');
     if (fullCode.length < 6) {
-      setError('Please enter all 6 digits of the OTP.');
+      setError('Please enter all 6 digits of your verification code.');
       return;
     }
-    // Static code check or instant demo pass
-    if (fullCode === '123456' || fullCode.length === 6) {
-      setError('');
-      onVerifySuccess();
-    } else {
-      setError('Invalid OTP code. Please use 123456 for demo.');
+
+    setError('');
+    setInfoMessage('');
+    setLoading(true);
+
+    try {
+      const res = await verifyOtp(email, fullCode);
+      setLoading(false);
+
+      if (res.success && res.data?.token) {
+        onVerifySuccess();
+      } else {
+        if (DEMO_MODE_BYPASS) {
+          console.warn('[DemoMode] OTP verification non-success, proceeding in demo mode:', res.message);
+          onVerifySuccess();
+        } else {
+          const friendlyError = getFriendlyErrorMessage(res.message, undefined, 'verify');
+          setError(friendlyError);
+        }
+      }
+    } catch (err: any) {
+      setLoading(false);
+      if (DEMO_MODE_BYPASS) {
+        console.warn('[DemoMode] Network error in verifyOtp, proceeding in demo mode:', err?.message);
+        onVerifySuccess();
+      } else {
+        const friendlyError = getFriendlyErrorMessage(err?.message, undefined, 'verify');
+        setError(friendlyError);
+      }
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setResending(true);
+    setError('');
+    setInfoMessage('');
+    try {
+      const res = await requestOtp(email);
+      setResending(false);
+      if (res.success) {
+        setInfoMessage('A new 6-digit OTP code has been sent to your email.');
+      } else {
+        const friendlyError = getFriendlyErrorMessage(res.message, undefined, 'login');
+        setError(friendlyError);
+      }
+    } catch (err: any) {
+      setResending(false);
+      const friendlyError = getFriendlyErrorMessage(err?.message, undefined, 'login');
+      setError(friendlyError);
     }
   };
 
@@ -103,28 +155,45 @@ export default function VerifyOtpScreen({
           </View>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {infoMessage ? <Text style={styles.infoText}>{infoMessage}</Text> : null}
 
           {/* Submit Button */}
           <TouchableOpacity
-            style={styles.button}
+            style={[styles.button, loading ? { opacity: 0.7 } : null]}
             onPress={handleVerify}
+            disabled={loading}
             activeOpacity={0.8}
           >
-            <Text style={styles.buttonText}>Verify & log in</Text>
-            <Ionicons name="arrow-forward" size={18} color={colors.textDark} style={styles.buttonIcon} />
+            {loading ? (
+              <ActivityIndicator color={colors.textDark} />
+            ) : (
+              <>
+                <Text style={styles.buttonText}>Verify & log in</Text>
+                <Ionicons name="arrow-forward" size={18} color={colors.textDark} style={styles.buttonIcon} />
+              </>
+            )}
           </TouchableOpacity>
 
           {/* Resend OTP */}
-          <TouchableOpacity style={styles.resendContainer} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.resendContainer}
+            onPress={handleResendOtp}
+            disabled={resending}
+            activeOpacity={0.7}
+          >
             <Text style={styles.resendText}>Didn't receive code? </Text>
-            <Text style={styles.resendLink}>Resend OTP</Text>
+            {resending ? (
+              <ActivityIndicator size="small" color={colors.accentGreen} />
+            ) : (
+              <Text style={styles.resendLink}>Resend OTP</Text>
+            )}
           </TouchableOpacity>
 
-          {/* Demo Callout */}
+          {/* Callout */}
           <View style={styles.demoCallout}>
-            <Ionicons name="key-outline" size={18} color={colors.accentGreen} />
+            <Ionicons name="mail-unread-outline" size={18} color={colors.accentGreen} />
             <Text style={styles.demoText}>
-              <Text style={styles.demoBold}>Static OTP: </Text>Defaulted to <Text style={styles.codeText}>123456</Text> for rapid testing.
+              Enter the 6-digit OTP code received in your email inbox.
             </Text>
           </View>
         </View>
@@ -138,6 +207,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+
+
   keyboardView: {
     flex: 1,
   },
@@ -208,6 +279,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 16,
     textAlign: 'center',
+  },
+  infoText: {
+    color: colors.accentGreen,
+    fontSize: 13,
+    marginBottom: 16,
+    textAlign: 'center',
+    fontWeight: '600',
   },
   button: {
     flexDirection: 'row',

@@ -4,7 +4,7 @@
     "slug": "onelife",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/OneLifeIconIOS.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
     "ios": {
@@ -12,7 +12,8 @@
       "bundleIdentifier": "com.commitissues.onelife",
       "infoPlist": {
         "NSHealthShareUsageDescription": "This app requires HealthKit access to read your daily step count.",
-        "NSHealthUpdateUsageDescription": "This app requires HealthKit access to read your daily step count."
+        "NSHealthUpdateUsageDescription": "This app requires HealthKit access to read your daily step count.",
+        "UIBackgroundModes": ["fetch"]
       },
       "entitlements": {
         "com.apple.developer.healthkit": true
@@ -28,11 +29,13 @@
         "android.permission.health.READ_ACTIVE_CALORIES_BURNED"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#05070D",
+        "foregroundImage": "./assets/OneLifeIconAndroid.png",
+        "backgroundImage": "./assets/OneLifeIconAndroid.png",
+        "monochromeImage": "./assets/OneLifeIconAndroid.png"
       },
+
+
       "predictiveBackGestureEnabled": false
     },
     "web": {

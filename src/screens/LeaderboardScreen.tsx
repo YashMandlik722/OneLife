@@ -1,41 +1,99 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   ImageBackground,
+  ActivityIndicator,
+  Platform,
+  Image,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
+
 import {
-  getIndividualLeaderboardFromDB,
-  getDepartmentLeaderboardFromDB,
-} from '../data/mockDatabase';
+  fetchUserLeaderboard,
+  fetchDepartmentLeaderboard,
+} from '../api/leaderboard';
+
+import { LeaderboardUserEntry, LeaderboardDepartmentEntry } from '../types/database';
 
 const leaderboardBg = require('../../assets/leaderboard_bg.png');
 
+
 export default function LeaderboardScreen() {
   const [viewType, setViewType] = useState<'Individual' | 'Department'>('Individual');
+  const [userEntries, setUserEntries] = useState<LeaderboardUserEntry[]>([]);
+  const [deptEntries, setDeptEntries] = useState<LeaderboardDepartmentEntry[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const individualLeaderboard = getIndividualLeaderboardFromDB();
-  const departmentLeaderboard = getDepartmentLeaderboardFromDB();
+  const loadLeaderboards = useCallback(async () => {
+    setLoading(true);
+    try {
+      // 1. Fetch User Leaderboard with SWR Cache
+      const userRes = await fetchUserLeaderboard((freshUsers) => {
+        if (freshUsers && freshUsers.length > 0) {
+          setUserEntries(freshUsers);
+        }
+      });
+      if (userRes.data && userRes.data.length > 0) {
+        setUserEntries(userRes.data);
+      }
+
+      // 2. Fetch Department Leaderboard with SWR Cache
+      const deptRes = await fetchDepartmentLeaderboard((freshDepts) => {
+        if (freshDepts && freshDepts.length > 0) {
+          setDeptEntries(freshDepts);
+        }
+      });
+      if (deptRes.data && deptRes.data.length > 0) {
+        setDeptEntries(deptRes.data);
+      }
+    } catch (err) {
+      console.warn('Failed to load leaderboards from API:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadLeaderboards();
+  }, [loadLeaderboards]);
+
+  const individualLeaderboard = userEntries;
+  const departmentLeaderboard = deptEntries;
 
   // Top 3 Podium Users
   const rank1 = individualLeaderboard.find((u) => u.rank === 1);
   const rank2 = individualLeaderboard.find((u) => u.rank === 2);
   const rank3 = individualLeaderboard.find((u) => u.rank === 3);
 
-  // User position (#8)
-  const currentUser = individualLeaderboard.find((u) => u.isCurrentUser);
+  // User position (dynamic current user)
+  const currentUser = individualLeaderboard.find((u) => u.isCurrentUser) || individualLeaderboard[0];
 
   // Remaining rankings (#4 onwards)
   const remainingRankings = individualLeaderboard.filter((u) => u.rank >= 4);
 
+  if (loading && userEntries.length === 0 && deptEntries.length === 0) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }]}>
+        <StatusBar style="light" />
+        <ActivityIndicator size="large" color={colors.accentCyan} />
+        <Text style={{ color: colors.textSecondary, marginTop: 16, fontSize: 14, fontWeight: '600' }}>
+          Loading Live Leaderboard...
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+
   return (
+
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
       <View style={styles.container}>
@@ -44,23 +102,33 @@ export default function LeaderboardScreen() {
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
-          {/* TOP HERO CONTAINER WITH SEAMLESS COSMIC BACKGROUND */}
-          <ImageBackground
-            source={leaderboardBg}
-            style={styles.heroBackground}
-            resizeMode="cover"
-          >
+          {/* TOP HERO CONTAINER */}
+          <View style={styles.heroBackground}>
             <View style={styles.heroContent}>
               {/* Header Row */}
+
+
               <View style={styles.headerRow}>
                 <View>
-                  <Text style={styles.headerTag}>COMPANY-WIDE · LIVE</Text>
                   <Text style={styles.headerTitle}>Leaderboard</Text>
                 </View>
-                <TouchableOpacity style={styles.infoButton} activeOpacity={0.7}>
-                  <Ionicons name="information-circle-outline" size={20} color="#9CA3AF" />
-                </TouchableOpacity>
+
+                <View style={styles.headerRightActions}>
+                  <TouchableOpacity style={styles.infoButton} onPress={loadLeaderboards} disabled={loading} activeOpacity={0.7}>
+                    {loading ? (
+                      <ActivityIndicator size="small" color="#22D3EE" />
+                    ) : (
+                      <Ionicons name="refresh-outline" size={20} color="#9CA3AF" />
+                    )}
+                  </TouchableOpacity>
+                  <Image
+                    source={require('../../assets/OneLifeInAppLogo.png')}
+                    style={styles.topRightLogo}
+                    resizeMode="contain"
+                  />
+                </View>
               </View>
+
 
               {/* Segmented Control */}
               <View style={styles.toggleContainer}>
@@ -166,7 +234,9 @@ export default function LeaderboardScreen() {
                 </View>
               ) : null}
             </View>
-          </ImageBackground>
+          </View>
+
+
 
           {/* YOUR POSITION BANNER WITH CYAN TOP DIVIDER */}
           {viewType === 'Individual' && currentUser ? (
@@ -278,6 +348,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#05070D',
   },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  topRightLogo: {
+    width: 32,
+    height: 32,
+  },
+
+
   container: {
     flex: 1,
     backgroundColor: '#05070D',
@@ -287,13 +368,30 @@ const styles = StyleSheet.create({
   },
   heroBackground: {
     width: '100%',
-    paddingTop: 12,
+    paddingTop: Platform.OS === 'ios' ? 12 : 20,
     paddingBottom: 24,
     paddingHorizontal: 20,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  heroBackgroundImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+
+  heroGradientOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 70,
+    zIndex: 1,
   },
   heroContent: {
     zIndex: 2,
   },
+
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

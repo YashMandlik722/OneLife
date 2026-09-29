@@ -5,22 +5,61 @@ import {
   View,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
+  Platform,
+  Image,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+
+
 import { getHealthProvider, HealthData } from '../health';
+import { fetchUserDashboard, fetchMeProfile, UserDashboardData } from '../api/user';
+import { syncNativeHealthKitActivity } from '../api/activity';
+import { User } from '../types/database';
 
 export default function MeScreen() {
   const [selectedSegment, setSelectedSegment] = useState<'Daily' | 'Weekly' | 'Monthly'>('Daily');
   const [healthData, setHealthData] = useState<HealthData | null>(null);
+  const [dashboardData, setDashboardData] = useState<UserDashboardData | null>(null);
+  const [userProfile, setUserProfile] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+
+  const loadUserData = useCallback(async () => {
+    // 1. Fetch User Dashboard with SWR Cache
+    const dashRes = await fetchUserDashboard((freshDash) => {
+      setDashboardData(freshDash);
+    });
+    if (dashRes.data) {
+      setDashboardData(dashRes.data);
+    }
+
+    // 2. Fetch Profile with SWR Cache
+    const profRes = await fetchMeProfile((freshUser) => {
+      setUserProfile(freshUser);
+    });
+    if (profRes.data) {
+      setUserProfile(profRes.data);
+    }
+  }, []);
 
   const fetchHealthData = useCallback(async () => {
     setLoading(true);
     try {
+      await loadUserData();
+
+      // Read native HealthKit and sync to backend API (POST /api/v1/activities)
+      const syncResult = await syncNativeHealthKitActivity(userProfile?.id, true);
+      if (syncResult.success) {
+        // Re-read fresh dashboard data after backend point calculation
+        const updatedDash = await fetchUserDashboard();
+        if (updatedDash.data) {
+          setDashboardData(updatedDash.data);
+        }
+      }
+
       const provider = getHealthProvider();
       const data = await provider.getTodayHealthData();
       setHealthData(data);
@@ -29,7 +68,7 @@ export default function MeScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadUserData, userProfile?.id]);
 
   useEffect(() => {
     fetchHealthData();
@@ -40,10 +79,15 @@ export default function MeScreen() {
     .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
     .toUpperCase();
 
-  // Metrics Data
-  const steps = healthData?.steps ?? 12480;
-  const distanceKm = healthData?.distanceKm ?? 8.7;
-  const floorsClimbed = healthData?.floorsClimbed ?? 18;
+  // Dynamic Identity Data
+  const userName = userProfile?.name || dashboardData?.user?.name || 'User';
+  const userDept = userProfile?.department?.name || dashboardData?.department?.name || 'Member';
+  const totalPoints = dashboardData?.points?.total ?? 0;
+
+  // Metrics Data (Merged from Native HealthKit & Backend API Dashboard)
+  const steps = healthData?.steps ?? dashboardData?.activities?.today?.steps ?? 0;
+  const distanceKm = healthData?.distanceKm ?? 0;
+  const floorsClimbed = healthData?.floorsClimbed ?? dashboardData?.activities?.today?.elevation ?? 0;
 
   // Goals
   const STEP_GOAL = 15000;
@@ -54,23 +98,41 @@ export default function MeScreen() {
   const distPercent = Math.min(Math.round((distanceKm / DISTANCE_GOAL) * 100), 100);
   const floorPercent = Math.min(Math.round((floorsClimbed / FLOORS_GOAL) * 100), 100);
 
+  if (loading && !dashboardData && !userProfile) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }]}>
+        <StatusBar style="light" />
+        <ActivityIndicator size="large" color={colors.accentCyan} />
+        <Text style={{ color: colors.textSecondary, marginTop: 16, fontSize: 14, fontWeight: '600' }}>
+          Fetching Profile & Activity Data...
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+
   return (
+
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         {/* Top Header: Identity & Date */}
         <View style={styles.header}>
           <View>
-            <View style={styles.identityRow}>
-              <View style={styles.userDot} />
-              <Text style={styles.userIdentity}>MAYA JENSEN • PRODUCT</Text>
-            </View>
             <Text style={styles.headerTitle}>Your activity</Text>
           </View>
-          <View style={styles.dateBadge}>
-            <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
-            <Text style={styles.dateBadgeText}>{todayDateString}</Text>
+          <View style={styles.headerRightActions}>
+            <View style={styles.dateBadge}>
+              <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
+              <Text style={styles.dateBadgeText}>{todayDateString}</Text>
+            </View>
+            <Image
+              source={require('../../assets/OneLifeInAppLogo.png')}
+              style={styles.topRightLogo}
+              resizeMode="contain"
+            />
           </View>
+
         </View>
 
         {/* Daily / Weekly / Monthly Segment Switcher */}
@@ -109,7 +171,7 @@ export default function MeScreen() {
           <View style={styles.ringWrapper}>
             <View style={styles.outerRing}>
               <View style={styles.innerRing}>
-                <Text style={styles.pointsNumber}>51</Text>
+                <Text style={styles.pointsNumber}>{totalPoints}</Text>
                 <Text style={styles.pointsLabel}>pts</Text>
               </View>
             </View>
@@ -203,6 +265,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  topRightLogo: {
+    width: 32,
+    height: 32,
+  },
+
+
   container: {
     padding: 20,
     paddingBottom: 40,

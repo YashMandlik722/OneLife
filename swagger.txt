@@ -1,0 +1,1065 @@
+const swaggerUi = require('swagger-ui-express');
+const yaml = require('js-yaml');
+const fs = require('fs');
+const path = require('path');
+
+const openApiDocumentation = {
+  openapi: '3.0.0',
+  info: {
+    title: 'OneLife — Health Monitoring & Employee Team Engagement API',
+    version: '1.0.0',
+    description: `
+**OneLife Backend POC API Documentation**
+
+This API powers a company health-monitoring and employee team-engagement platform:
+- **Email + OTP Authentication** with JWT tokens.
+- **Cross-Department Team Generation** balancing employees across teams.
+- **AI-Powered Challenges** generated via Google Gemini API.
+- **Health Activity Logging** for steps, calories, and elevation.
+- **Automated Challenge Tracking** updating member and team progress.
+- **Gamified Points & Dynamic Leaderboards** for users, teams, and departments.
+    `,
+    contact: {
+      name: 'OneLife Engineering Team',
+      email: 'engineering@onelife.local'
+    }
+  },
+  servers: [
+    {
+      url: 'http://localhost:8000',
+      description: 'Local development / Docker container server'
+    }
+  ],
+  tags: [
+    { name: 'Authentication', description: 'Email OTP generation, verification, and JWT session issuance' },
+    { name: 'Users', description: 'User accounts, personal dashboards, and user activity history' },
+    { name: 'Departments', description: 'Department listings and details' },
+    { name: 'Teams', description: 'Random cross-department team generation, rosters, and team dashboard' },
+    { name: 'Challenges', description: 'Gemini AI challenge generation, manual creation, and status tracking' },
+    { name: 'Activities', description: 'Health & wellness activity logging (steps, calories, elevation)' },
+    { name: 'Leaderboards', description: 'Rankings for users, teams, and departments based on points' },
+    { name: 'System', description: 'System health checks and root status' }
+  ],
+  components: {
+    securitySchemes: {
+      BearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'Provide your JWT token obtained from `/api/v1/auth/verify-otp`. Example: `Bearer <token>`'
+      }
+    },
+    schemas: {
+      ApiResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          message: { type: 'string', example: 'Operation completed successfully' },
+          data: { type: 'object', nullable: true }
+        }
+      },
+      ErrorResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: false },
+          message: { type: 'string', example: 'Error details or validation message' },
+          errors: { type: 'array', items: { type: 'string' }, nullable: true }
+        }
+      },
+      Department: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          name: { type: 'string', example: 'DevOps' },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time' }
+        }
+      },
+      User: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          name: { type: 'string', example: 'Alice Smith' },
+          email: { type: 'string', format: 'email', example: 'alice@example.com' },
+          department_id: { type: 'integer', example: 1, nullable: true },
+          department: { $ref: '#/components/schemas/Department' },
+          created_at: { type: 'string', format: 'date-time' }
+        }
+      },
+      Team: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          name: { type: 'string', example: 'Team Alpha' },
+          created_at: { type: 'string', format: 'date-time' }
+        }
+      },
+      TeamMember: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          team_id: { type: 'integer', example: 1 },
+          user_id: { type: 'integer', example: 1 },
+          joined_at: { type: 'string', format: 'date-time' },
+          user: { $ref: '#/components/schemas/User' }
+        }
+      },
+      Challenge: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          team_id: { type: 'integer', example: 1 },
+          title: { type: 'string', example: 'Cross-Department Step Sprint' },
+          description: { type: 'string', example: 'Accumulate 30,000 steps together across departments.' },
+          target_value: { type: 'number', example: 30000 },
+          target_unit: { type: 'string', enum: ['steps', 'calories', 'elevation'], example: 'steps' },
+          points: { type: 'integer', example: 100 },
+          status: { type: 'string', enum: ['ACTIVE', 'COMPLETED'], example: 'ACTIVE' },
+          created_at: { type: 'string', format: 'date-time' }
+        }
+      },
+      ChallengeProgress: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          challenge_id: { type: 'integer', example: 1 },
+          user_id: { type: 'integer', example: 1 },
+          current_value: { type: 'number', example: 5000 },
+          completed: { type: 'boolean', example: false },
+          completed_at: { type: 'string', format: 'date-time', nullable: true }
+        }
+      },
+      Activity: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          user_id: { type: 'integer', example: 1 },
+          steps: { type: 'integer', example: 6000 },
+          calories: { type: 'number', example: 250 },
+          elevation: { type: 'number', example: 20 },
+          activity_date: { type: 'string', format: 'date', example: '2026-09-29' },
+          created_at: { type: 'string', format: 'date-time' }
+        }
+      },
+      PointTransaction: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer', example: 1 },
+          user_id: { type: 'integer', nullable: true, example: 1 },
+          team_id: { type: 'integer', nullable: true, example: 1 },
+          department_id: { type: 'integer', nullable: true, example: 1 },
+          points: { type: 'integer', example: 100 },
+          source: { type: 'string', example: 'CHALLENGE_COMPLETION' },
+          reason: { type: 'string', example: 'Cross-Department Step Sprint' },
+          created_at: { type: 'string', format: 'date-time' }
+        }
+      },
+      UserDashboard: {
+        type: 'object',
+        properties: {
+          user: { $ref: '#/components/schemas/User' },
+          department: { $ref: '#/components/schemas/Department' },
+          points: {
+            type: 'object',
+            properties: {
+              total: { type: 'integer', example: 250 },
+              sources: { type: 'array', items: { $ref: '#/components/schemas/PointTransaction' } }
+            }
+          },
+          activities: {
+            type: 'object',
+            properties: {
+              today: {
+                type: 'object',
+                properties: {
+                  steps: { type: 'integer', example: 5000 },
+                  calories: { type: 'number', example: 220 },
+                  elevation: { type: 'number', example: 15 }
+                }
+              },
+              total_steps: { type: 'integer', example: 85000 },
+              total_calories: { type: 'number', example: 3500 },
+              total_elevation: { type: 'number', example: 320 },
+              recent: { type: 'array', items: { $ref: '#/components/schemas/Activity' } }
+            }
+          },
+          active_challenges: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'integer', example: 1 },
+                title: { type: 'string', example: 'Cross-Department Step Sprint' },
+                description: { type: 'string', example: 'Reach 30,000 steps together.' },
+                target_value: { type: 'number', example: 30000 },
+                target_unit: { type: 'string', example: 'steps' },
+                points: { type: 'integer', example: 100 },
+                user_progress: { type: 'number', example: 5000 },
+                team_progress: { type: 'number', example: 18000 },
+                percentage: { type: 'integer', example: 60 }
+              }
+            }
+          },
+          teams: { type: 'array', items: { $ref: '#/components/schemas/Team' } },
+          leaderboard_position: {
+            type: 'object',
+            properties: {
+              rank: { type: 'integer', example: 3 },
+              total_users: { type: 'integer', example: 12 }
+            }
+          }
+        }
+      },
+      TeamDashboard: {
+        type: 'object',
+        properties: {
+          team: { $ref: '#/components/schemas/Team' },
+          members: { type: 'array', items: { $ref: '#/components/schemas/User' } },
+          points: {
+            type: 'object',
+            properties: {
+              total: { type: 'integer', example: 400 },
+              history: { type: 'array', items: { $ref: '#/components/schemas/PointTransaction' } }
+            }
+          },
+          active_challenges: { type: 'array', items: { type: 'object' } },
+          leaderboard_position: {
+            type: 'object',
+            properties: {
+              rank: { type: 'integer', example: 1 },
+              total_teams: { type: 'integer', example: 3 }
+            }
+          }
+        }
+      }
+    }
+  },
+  paths: {
+    '/': {
+      get: {
+        summary: 'Server info and documentation links',
+        tags: ['System'],
+        responses: {
+          200: {
+            description: 'API root information',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    message: { type: 'string', example: 'OneLife Health Monitoring & Team Engagement POC API' },
+                    docs: { type: 'string', example: '/api-docs' },
+                    health: { type: 'string', example: '/api/v1/health' }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/v1/health': {
+      get: {
+        summary: 'Service health check',
+        tags: ['System'],
+        responses: {
+          200: {
+            description: 'Server is healthy',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    status: { type: 'string', example: 'OK' },
+                    timestamp: { type: 'string', format: 'date-time' },
+                    service: { type: 'string', example: 'OneLife Health Backend POC' }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/v1/auth/request-otp': {
+      post: {
+        summary: 'Request 6-digit login verification OTP',
+        description: 'Generates a secure 6-digit single-use OTP, hashes it in the database, and sends it to the user via SMTP.',
+        tags: ['Authentication'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['email'],
+                properties: {
+                  email: { type: 'string', format: 'email', example: 'alice@example.com' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'OTP successfully generated and sent',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    message: { type: 'string', example: 'OTP sent to your email address' },
+                    data: { type: 'object', nullable: true, example: null }
+                  }
+                }
+              }
+            }
+          },
+          400: { description: 'Missing or invalid email', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          429: { description: 'Too many requests (rate limit exceeded)', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/api/v1/auth/verify-otp': {
+      post: {
+        summary: 'Verify OTP and obtain JWT authentication token',
+        description: 'Verifies the supplied 6-digit OTP against unexpired, unused database hashes. If valid, marks the OTP as used and returns a JWT token.',
+        tags: ['Authentication'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['email', 'otp'],
+                properties: {
+                  email: { type: 'string', format: 'email', example: 'alice@example.com' },
+                  otp: { type: 'string', example: '123456' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'OTP verified successfully, returns JWT Bearer token',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    message: { type: 'string', example: 'Authentication successful' },
+                    data: {
+                      type: 'object',
+                      properties: {
+                        token: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' },
+                        user: { $ref: '#/components/schemas/User' }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: { description: 'Missing email or OTP', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          401: { description: 'Invalid or expired OTP', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/api/v1/users': {
+      get: {
+        summary: 'List all users',
+        tags: ['Users'],
+        responses: {
+          200: {
+            description: 'Array of users with their departments and team memberships',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/User' } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      post: {
+        summary: 'Create a new user',
+        tags: ['Users'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['name', 'email'],
+                properties: {
+                  name: { type: 'string', example: 'Diana Prince' },
+                  email: { type: 'string', format: 'email', example: 'diana@example.com' },
+                  department_id: { type: 'integer', example: 1 }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: 'User created successfully',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    message: { type: 'string', example: 'User created successfully' },
+                    data: { $ref: '#/components/schemas/User' }
+                  }
+                }
+              }
+            }
+          },
+          400: { description: 'Invalid input parameters', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          409: { description: 'User with email already exists', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/api/v1/users/me/dashboard': {
+      get: {
+        summary: 'Current logged-in user home dashboard',
+        description: 'Returns profile, department, point sources, daily and aggregate activity statistics, active team challenges, and individual leaderboard rank.',
+        tags: ['Users'],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          200: {
+            description: 'User dashboard data',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { $ref: '#/components/schemas/UserDashboard' }
+                  }
+                }
+              }
+            }
+          },
+          401: { description: 'Unauthorized — missing or invalid Bearer token', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/api/v1/users/me': {
+      get: {
+        summary: 'Current logged-in user profile',
+        tags: ['Users'],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          200: {
+            description: 'User profile with point history',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { $ref: '#/components/schemas/User' }
+                  }
+                }
+              }
+            }
+          },
+          401: { description: 'Unauthorized' }
+        }
+      }
+    },
+    '/api/v1/users/{id}': {
+      get: {
+        summary: 'Get user by ID',
+        tags: ['Users'],
+        parameters: [
+          { name: 'id', in: 'path', required: true, description: 'User ID', schema: { type: 'integer' } }
+        ],
+        responses: {
+          200: {
+            description: 'User details with points and team memberships',
+            content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, data: { $ref: '#/components/schemas/User' } } } } }
+          },
+          404: { description: 'User not found' }
+        }
+      }
+    },
+    '/api/v1/users/{id}/dashboard': {
+      get: {
+        summary: 'Get dashboard data for specific user by ID',
+        tags: ['Users'],
+        parameters: [
+          { name: 'id', in: 'path', required: true, description: 'User ID', schema: { type: 'integer' } }
+        ],
+        responses: {
+          200: {
+            description: 'User dashboard',
+            content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, data: { $ref: '#/components/schemas/UserDashboard' } } } } }
+          },
+          404: { description: 'User not found' }
+        }
+      }
+    },
+    '/api/v1/users/{id}/activities': {
+      get: {
+        summary: 'Get activity history for a user',
+        tags: ['Users'],
+        parameters: [
+          { name: 'id', in: 'path', required: true, description: 'User ID', schema: { type: 'integer' } }
+        ],
+        responses: {
+          200: {
+            description: 'List of user activity entries',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/Activity' } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/v1/users/{id}/activities/{date}': {
+      get: {
+        summary: 'Get user activities for a specific date',
+        tags: ['Users'],
+        parameters: [
+          { name: 'id', in: 'path', required: true, description: 'User ID', schema: { type: 'integer' } },
+          { name: 'date', in: 'path', required: true, description: 'Date in YYYY-MM-DD format', schema: { type: 'string', example: '2026-09-29' } }
+        ],
+        responses: {
+          200: {
+            description: 'Activities logged on the given date',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/Activity' } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/v1/departments': {
+      get: {
+        summary: 'List all departments',
+        tags: ['Departments'],
+        responses: {
+          200: {
+            description: 'List of departments with member users',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/Department' } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      post: {
+        summary: 'Create a new department',
+        tags: ['Departments'],
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['name'],
+                properties: {
+                  name: { type: 'string', example: 'DevOps' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: 'Department created',
+            content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, data: { $ref: '#/components/schemas/Department' } } } } }
+          },
+          400: { description: 'Missing department name' },
+          409: { description: 'Department name already exists' }
+        }
+      }
+    },
+    '/api/v1/departments/{id}': {
+      get: {
+        summary: 'Get department by ID',
+        tags: ['Departments'],
+        parameters: [
+          { name: 'id', in: 'path', required: true, description: 'Department ID', schema: { type: 'integer' } }
+        ],
+        responses: {
+          200: {
+            description: 'Department details with employee list',
+            content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, data: { $ref: '#/components/schemas/Department' } } } } }
+          },
+          404: { description: 'Department not found' }
+        }
+      }
+    },
+    '/api/v1/teams': {
+      get: {
+        summary: 'List all teams',
+        tags: ['Teams'],
+        responses: {
+          200: {
+            description: 'List of teams with members and departments',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/Team' } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/v1/teams/generate': {
+      post: {
+        summary: 'Generate random cross-department teams',
+        description: 'Algorithmic distribution of available users into teams designed to maximize departmental diversity without LLM.',
+        tags: ['Teams'],
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  teamCount: { type: 'integer', example: 3, description: 'Number of teams to create' },
+                  membersPerTeam: { type: 'integer', example: 4, description: 'Target members per team' },
+                  userIds: { type: 'array', items: { type: 'integer' }, description: 'Optional list of user IDs to include' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: 'Teams successfully generated',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    message: { type: 'string', example: 'Teams successfully generated' },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/Team' } }
+                  }
+                }
+              }
+            }
+          },
+          400: { description: 'No users available or invalid configuration' }
+        }
+      }
+    },
+    '/api/v1/teams/{id}': {
+      get: {
+        summary: 'Get team by ID',
+        tags: ['Teams'],
+        parameters: [
+          { name: 'id', in: 'path', required: true, description: 'Team ID', schema: { type: 'integer' } }
+        ],
+        responses: {
+          200: {
+            description: 'Team details with members and challenges',
+            content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, data: { $ref: '#/components/schemas/Team' } } } } }
+          },
+          404: { description: 'Team not found' }
+        }
+      }
+    },
+    '/api/v1/teams/{id}/dashboard': {
+      get: {
+        summary: 'Get team dashboard',
+        description: 'Returns team details, member roster with departments, cumulative points, active challenges with progress bars, and team leaderboard rank.',
+        tags: ['Teams'],
+        parameters: [
+          { name: 'id', in: 'path', required: true, description: 'Team ID', schema: { type: 'integer' } }
+        ],
+        responses: {
+          200: {
+            description: 'Complete team dashboard',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { $ref: '#/components/schemas/TeamDashboard' }
+                  }
+                }
+              }
+            }
+          },
+          404: { description: 'Team not found' }
+        }
+      }
+    },
+    '/api/v1/challenges': {
+      get: {
+        summary: 'List all challenges',
+        tags: ['Challenges'],
+        parameters: [
+          { name: 'team_id', in: 'query', required: false, description: 'Filter by Team ID', schema: { type: 'integer' } },
+          { name: 'status', in: 'query', required: false, description: 'Filter by status (ACTIVE / COMPLETED)', schema: { type: 'string', enum: ['ACTIVE', 'COMPLETED'] } }
+        ],
+        responses: {
+          200: {
+            description: 'List of challenges with team progress calculations',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/Challenge' } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      post: {
+        summary: 'Directly create a challenge for a team',
+        tags: ['Challenges'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['team_id', 'title', 'description', 'target_value', 'target_unit'],
+                properties: {
+                  team_id: { type: 'integer', example: 1 },
+                  title: { type: 'string', example: '10K Step Sprint' },
+                  description: { type: 'string', example: 'Step up together to reach 10,000 steps!' },
+                  target_value: { type: 'number', example: 10000 },
+                  target_unit: { type: 'string', enum: ['steps', 'calories', 'elevation'], example: 'steps' },
+                  points: { type: 'integer', example: 100 }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: 'Challenge created and member progress records initialized',
+            content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, data: { $ref: '#/components/schemas/Challenge' } } } } }
+          },
+          400: { description: 'Validation error' }
+        }
+      }
+    },
+    '/api/v1/challenges/generate': {
+      post: {
+        summary: 'Generate an AI challenge for a team using Gemini',
+        description: 'Prompts Google Gemini to produce a safe, workplace-appropriate, cross-functional activity challenge, strictly validates schema, and initializes member progress.',
+        tags: ['Challenges'],
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  team_id: { type: 'integer', example: 1, description: 'Target team ID (defaults to first available)' },
+                  preferred_unit: { type: 'string', enum: ['steps', 'calories', 'elevation'], example: 'steps' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: 'AI challenge created and members assigned',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    message: { type: 'string', example: 'Challenge generated successfully' },
+                    data: { $ref: '#/components/schemas/Challenge' }
+                  }
+                }
+              }
+            }
+          },
+          400: { description: 'Generation or validation error' }
+        }
+      }
+    },
+    '/api/v1/challenges/{id}': {
+      get: {
+        summary: 'Get challenge details by ID',
+        tags: ['Challenges'],
+        parameters: [
+          { name: 'id', in: 'path', required: true, description: 'Challenge ID', schema: { type: 'integer' } }
+        ],
+        responses: {
+          200: {
+            description: 'Challenge details with individual and team progress',
+            content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, data: { $ref: '#/components/schemas/Challenge' } } } } }
+          },
+          404: { description: 'Challenge not found' }
+        }
+      }
+    },
+    '/api/v1/activities': {
+      post: {
+        summary: 'Submit health/fitness activity',
+        description: 'Logs activity (steps, calories, elevation). Automatically checks active team challenges, increments progress, and triggers completion/point distribution if target reached.',
+        tags: ['Activities'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['user_id'],
+                properties: {
+                  user_id: { type: 'integer', example: 1, description: 'User ID (defaults to authenticated user if omitted)' },
+                  steps: { type: 'integer', example: 4500, description: 'Number of steps walked' },
+                  calories: { type: 'number', example: 210, description: 'Active calories burned' },
+                  elevation: { type: 'number', example: 18, description: 'Elevation gained in meters' },
+                  activity_date: { type: 'string', format: 'date', example: '2026-09-29', description: 'Activity date (defaults to today)' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          201: {
+            description: 'Activity recorded and challenges updated',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    message: { type: 'string', example: 'Activity recorded successfully' },
+                    data: {
+                      type: 'object',
+                      properties: {
+                        activity: { $ref: '#/components/schemas/Activity' },
+                        challenge_updates: {
+                          type: 'object',
+                          properties: {
+                            updatedChallenges: { type: 'array', items: { type: 'object' } },
+                            completedChallenges: { type: 'array', items: { type: 'object' } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: { description: 'Validation error' }
+        }
+      }
+    },
+    '/api/v1/leaderboards/users': {
+      get: {
+        summary: 'Individual employee points leaderboard',
+        description: 'Calculates dynamic rankings for all users ordered by total points descending from point_transactions.',
+        tags: ['Leaderboards'],
+        responses: {
+          200: {
+            description: 'Ranked individual users',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    data: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          rank: { type: 'integer', example: 1 },
+                          user: {
+                            type: 'object',
+                            properties: {
+                              id: { type: 'integer', example: 1 },
+                              name: { type: 'string', example: 'Alice Smith' },
+                              email: { type: 'string', example: 'alice@example.com' }
+                            }
+                          },
+                          department: {
+                            type: 'object',
+                            nullable: true,
+                            properties: {
+                              id: { type: 'integer', example: 1 },
+                              name: { type: 'string', example: 'HR' }
+                            }
+                          },
+                          points: { type: 'integer', example: 350 }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/v1/leaderboards/teams': {
+      get: {
+        summary: 'Team points leaderboard',
+        description: 'Calculates dynamic rankings for all teams ordered by cumulative team points descending.',
+        tags: ['Leaderboards'],
+        responses: {
+          200: {
+            description: 'Ranked teams',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    data: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          rank: { type: 'integer', example: 1 },
+                          team: {
+                            type: 'object',
+                            properties: {
+                              id: { type: 'integer', example: 1 },
+                              name: { type: 'string', example: 'Team Alpha' }
+                            }
+                          },
+                          points: { type: 'integer', example: 600 }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '/api/v1/leaderboards/departments': {
+      get: {
+        summary: 'Department points leaderboard',
+        description: 'Calculates dynamic rankings for corporate departments based on member challenge points.',
+        tags: ['Leaderboards'],
+        responses: {
+          200: {
+            description: 'Ranked departments',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    data: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          rank: { type: 'integer', example: 1 },
+                          department: {
+                            type: 'object',
+                            properties: {
+                              id: { type: 'integer', example: 1 },
+                              name: { type: 'string', example: 'DevOps' }
+                            }
+                          },
+                          points: { type: 'integer', example: 400 }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+const setupSwagger = (app) => {
+  // Save standalone openapi.json and openapi.yaml to disk
+  try {
+    const jsonPath = path.resolve(__dirname, '../../openapi.json');
+    const yamlPath = path.resolve(__dirname, '../../openapi.yaml');
+    fs.writeFileSync(jsonPath, JSON.stringify(openApiDocumentation, null, 2));
+    fs.writeFileSync(yamlPath, yaml.dump(openApiDocumentation));
+  } catch (err) {
+    // Non-fatal if read-only filesystem
+  }
+
+  // Interactive Swagger UI
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiDocumentation, {
+    customSiteTitle: 'OneLife API Documentation',
+    customCss: '.swagger-ui .topbar { display: block; }'
+  }));
+
+  // Direct OpenAPI JSON specification endpoint
+  app.get('/api-docs.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(openApiDocumentation);
+  });
+
+  // Direct OpenAPI YAML specification endpoint
+  app.get('/api-docs.yaml', (req, res) => {
+    res.setHeader('Content-Type', 'text/yaml');
+    res.send(yaml.dump(openApiDocumentation));
+  });
+};
+
+module.exports = {
+  openApiDocumentation,
+  setupSwagger
+};
+
+
+machine ip : 10.81.2.251 test all the api and give me the result which one worked or not?
+
+
