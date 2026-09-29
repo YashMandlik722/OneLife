@@ -119,7 +119,7 @@ export default function ChallengeScreen() {
 
   return (
 
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar style="light" />
       <ScrollView
         contentContainerStyle={styles.container}

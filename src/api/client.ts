@@ -13,7 +13,7 @@ export interface ApiResponse<T = any> {
 }
 
 let authToken: string | null = null;
-let activeUserId: string | number = 1; // Default session user_id (1)
+let activeUserId: string | number = 104; // Default session user_id (104 - Yash Mandlik)
 
 export const setAuthToken = (token: string | null) => {
   authToken = token;

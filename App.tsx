@@ -6,6 +6,7 @@ import VerifyOtpScreen from './src/screens/VerifyOtpScreen';
 import TabNavigator from './src/navigation/TabNavigator';
 import { startForegroundSync, stopForegroundSync } from './src/services/activitySyncManager';
 import { prefetchLeaderboard } from './src/api/leaderboard';
+import { getActiveUserId } from './src/api/client';
 
 export default function App() {
   const [authStep, setAuthStep] = useState<'login' | 'otp' | 'authenticated'>('login');
@@ -15,7 +16,7 @@ export default function App() {
     let leaderboardInterval: ReturnType<typeof setInterval> | null = null;
 
     if (authStep === 'authenticated') {
-      startForegroundSync(1);
+      startForegroundSync(getActiveUserId());
 
       // 1. Initial prefetch on App Launch / Authentication
       prefetchLeaderboard(userEmail);

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import ChallengeScreen from '../screens/ChallengeScreen';
@@ -14,6 +15,7 @@ interface TabNavigatorProps {
 
 export default function TabNavigator({ onSignOut }: TabNavigatorProps) {
   const [activeTab, setActiveTab] = useState<TabType>('Challenge');
+  const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.container}>
@@ -25,7 +27,7 @@ export default function TabNavigator({ onSignOut }: TabNavigatorProps) {
       </View>
 
       {/* Custom Bottom Tab Bar */}
-      <View style={styles.tabBar}>
+      <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => setActiveTab('Challenge')}
@@ -100,12 +102,10 @@ const styles = StyleSheet.create({
   },
   tabBar: {
     flexDirection: 'row',
-    height: 64,
     backgroundColor: colors.tabBarBackground,
     borderTopWidth: 1,
     borderTopColor: colors.tabBarBorder,
-    paddingBottom: 8,
-    paddingTop: 8,
+    paddingTop: 10,
   },
   tabItem: {
     flex: 1,

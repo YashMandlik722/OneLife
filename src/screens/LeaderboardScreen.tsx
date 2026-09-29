@@ -316,7 +316,7 @@ export default function LeaderboardScreen() {
 
   return (
 
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar style="light" />
       <View style={styles.container}>
         <FlatList
