@@ -6,11 +6,11 @@ import VerifyOtpScreen from './src/screens/VerifyOtpScreen';
 import TabNavigator from './src/navigation/TabNavigator';
 import { startForegroundSync, stopForegroundSync } from './src/services/activitySyncManager';
 import { prefetchLeaderboard } from './src/api/leaderboard';
-import { getActiveUserId } from './src/api/client';
+import { getActiveUserId, setActiveUserEmail } from './src/api/client';
 
 export default function App() {
   const [authStep, setAuthStep] = useState<'login' | 'otp' | 'authenticated'>('login');
-  const [userEmail, setUserEmail] = useState('yash.mandlik@digivalet.com');
+  const [userEmail, setUserEmail] = useState('');
 
   useEffect(() => {
     let leaderboardInterval: ReturnType<typeof setInterval> | null = null;
@@ -38,6 +38,7 @@ export default function App() {
 
   const handleSendOtp = (email: string) => {
     setUserEmail(email);
+    setActiveUserEmail(email);
     setAuthStep('otp');
   };
 

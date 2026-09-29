@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Platform,
   Image,
+  ImageBackground,
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,6 +29,7 @@ const leaderboardBg = require('../../assets/leaderboard_bg.png');
 
 export default function LeaderboardScreen() {
   const [viewType, setViewType] = useState<'Individual' | 'Department'>('Individual');
+  const [expandedDeptId, setExpandedDeptId] = useState<string | number | null>(null);
 
   // Instant synchronous cache initialization to eliminate 2-3s navigation delay
   const [userEntries, setUserEntries] = useState<LeaderboardUserEntry[]>(() => {
@@ -81,7 +83,18 @@ export default function LeaderboardScreen() {
   const rank2 = useMemo(() => individualLeaderboard.find((u) => u.rank === 2), [individualLeaderboard]);
   const rank3 = useMemo(() => individualLeaderboard.find((u) => u.rank === 3), [individualLeaderboard]);
   const currentUser = useMemo(() => individualLeaderboard.find((u) => u.isCurrentUser) || individualLeaderboard[0], [individualLeaderboard]);
-  const remainingRankings = useMemo(() => individualLeaderboard.filter((u) => u.rank >= 4), [individualLeaderboard]);
+  const remainingRankings = useMemo(() => individualLeaderboard.filter((u) => Number(u.rank) >= 4), [individualLeaderboard]);
+
+  const deptRank1 = useMemo(() => departmentLeaderboard.find((d) => d.rank === 1), [departmentLeaderboard]);
+  const deptRank2 = useMemo(() => departmentLeaderboard.find((d) => d.rank === 2), [departmentLeaderboard]);
+  const deptRank3 = useMemo(() => departmentLeaderboard.find((d) => d.rank === 3), [departmentLeaderboard]);
+
+  const getDeptInitials = useCallback((name: string): string => {
+    if (!name) return 'DP';
+    const parts = name.trim().split(' ');
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }, []);
 
   const renderUserRow = useCallback(({ item: user }: { item: LeaderboardUserEntry }) => {
     const isUser = user.isCurrentUser;
@@ -123,20 +136,89 @@ export default function LeaderboardScreen() {
     );
   }, []);
 
-  const renderDeptRow = useCallback(({ item: dept }: { item: LeaderboardDepartmentEntry }) => {
-    return (
-      <View style={styles.rankRow}>
-        <View style={[styles.deptRankBadge, { backgroundColor: dept.color }]}>
-          <Text style={styles.deptRankBadgeText}>#{dept.rank}</Text>
+  const renderDeptRow = useCallback(
+    ({ item: dept }: { item: LeaderboardDepartmentEntry }) => {
+      const isExpanded = expandedDeptId === dept.id;
+
+      // Filter members belonging to this department sorted by points descending
+      const deptMembers = userEntries
+        .filter(
+          (u) => u.departmentName?.toLowerCase().trim() === dept.name?.toLowerCase().trim()
+        )
+        .sort((a, b) => b.points - a.points);
+
+      const actualCount = deptMembers.length || dept.membersCount || 0;
+
+      const toggleExpand = () => {
+        setExpandedDeptId((prev) => (prev === dept.id ? null : dept.id));
+      };
+
+      return (
+        <View style={styles.deptRowContainer}>
+          <TouchableOpacity
+            style={[styles.rankRow, isExpanded && styles.deptRowExpandedHeader]}
+            onPress={toggleExpand}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.deptRankBadge, { backgroundColor: dept.color }]}>
+              <Text style={styles.deptRankBadgeText}>#{dept.rank}</Text>
+            </View>
+
+            <View style={styles.rowInfoCol}>
+              <Text style={styles.rowName}>{dept.name}</Text>
+              <Text style={styles.rowDept}>{actualCount} active members</Text>
+            </View>
+
+            <View style={styles.deptPointsRightRow}>
+              <Text style={styles.rowPoints}>{dept.points.toLocaleString()} pts</Text>
+              <View style={styles.chevronBox}>
+                <Ionicons
+                  name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                  size={16}
+                  color={isExpanded ? colors.accentCyan : colors.textMuted}
+                />
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          {/* Expandable Member List Dropdown */}
+          {isExpanded ? (
+            <View style={styles.deptDropdownList}>
+              <View style={styles.deptDropdownHeader}>
+                <Text style={styles.deptDropdownTitle}>
+                  DEPARTMENT MEMBERS ({actualCount})
+                </Text>
+              </View>
+
+              {deptMembers.map((member, index) => (
+                <View key={member.id} style={styles.deptMemberRow}>
+                  <Text style={styles.deptMemberRank}>#{index + 1}</Text>
+                  
+                  <View style={[styles.deptMemberAvatar, { backgroundColor: member.avatarBgColor || '#1F293D' }]}>
+                    <Text style={styles.deptMemberAvatarText}>{member.initials}</Text>
+                  </View>
+
+                  <View style={styles.deptMemberInfo}>
+                    <Text style={styles.deptMemberName}>
+                      {member.name}
+                      {member.isCurrentUser ? (
+                        <Text style={styles.youHighlight}> · You</Text>
+                      ) : null}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.deptMemberPoints}>
+                    {member.points.toLocaleString()} pts
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
         </View>
-        <View style={styles.rowInfoCol}>
-          <Text style={styles.rowName}>{dept.name}</Text>
-          <Text style={styles.rowDept}>{dept.membersCount} active members</Text>
-        </View>
-        <Text style={styles.rowPoints}>{dept.points.toLocaleString()} pts</Text>
-      </View>
-    );
-  }, []);
+      );
+    },
+    [expandedDeptId, userEntries]
+  );
 
   const ListHeader = useMemo(() => {
     return (
@@ -192,76 +274,155 @@ export default function LeaderboardScreen() {
               </TouchableOpacity>
             </View>
 
-            {viewType === 'Individual' ? (
-              /* TOP 3 PODIUM OVER COSMIC MOUNTAIN */
-              <View style={styles.podiumRow}>
-                {/* Rank #2 (Left - Jon Okafor) */}
-                {rank2 ? (
-                  <View style={[styles.podiumCol, styles.podiumColSide]}>
-                    <View style={styles.avatarWrapper}>
-                      <View style={[styles.rankBadge, { backgroundColor: '#94A3B8' }]}>
-                        <Text style={styles.rankBadgeText}>2</Text>
+            {/* DEDICATED PODIUM CONTAINER WITH BACKGROUND IMAGE */}
+            <ImageBackground
+              source={leaderboardBg}
+              style={styles.podiumContainerCard}
+              imageStyle={styles.podiumContainerImage}
+              resizeMode="cover"
+            >
+              <View style={styles.podiumContainerOverlay}>
+                {viewType === 'Individual' ? (
+                  /* TOP 3 PODIUM FOR INDIVIDUALS */
+                  <View style={styles.podiumRow}>
+                    {/* Rank #2 (Left) */}
+                    {rank2 ? (
+                      <View style={[styles.podiumCol, styles.podiumColSide]}>
+                        <View style={styles.avatarWrapper}>
+                          <View style={[styles.rankBadge, { backgroundColor: '#94A3B8' }]}>
+                            <Text style={styles.rankBadgeText}>2</Text>
+                          </View>
+                          <View style={[styles.avatarCircle, { backgroundColor: '#8B5CF6' }]}>
+                            <Text style={styles.avatarText}>{rank2.initials}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.podiumName} numberOfLines={1}>
+                          {rank2.name}
+                        </Text>
+                        <View style={[styles.pointsPill, { backgroundColor: 'rgba(139, 92, 246, 0.35)' }]}>
+                          <Text style={[styles.pointsPillText, { color: '#C4B5FD' }]}>
+                            {rank2.points.toLocaleString()} pts
+                          </Text>
+                        </View>
                       </View>
-                      <View style={[styles.avatarCircle, { backgroundColor: '#8B5CF6' }]}>
-                        <Text style={styles.avatarText}>{rank2.initials}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.podiumName} numberOfLines={1}>
-                      {rank2.name}
-                    </Text>
-                    <View style={[styles.pointsPill, { backgroundColor: 'rgba(139, 92, 246, 0.35)' }]}>
-                      <Text style={[styles.pointsPillText, { color: '#C4B5FD' }]}>
-                        {rank2.points.toLocaleString()} pts
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
+                    ) : null}
 
-                {/* Rank #1 (Center - Nina Patel) */}
-                {rank1 ? (
-                  <View style={[styles.podiumCol, styles.podiumColCenter]}>
-                    <View style={styles.avatarWrapperCenter}>
-                      <View style={[styles.rankBadgeCenter, { backgroundColor: '#A3E635' }]}>
-                        <Text style={styles.rankBadgeTextCenter}>1</Text>
+                    {/* Rank #1 (Center) */}
+                    {rank1 ? (
+                      <View style={[styles.podiumCol, styles.podiumColCenter]}>
+                        <View style={styles.avatarWrapperCenter}>
+                          <View style={[styles.rankBadgeCenter, { backgroundColor: '#A3E635' }]}>
+                            <Text style={styles.rankBadgeTextCenter}>1</Text>
+                          </View>
+                          <View style={[styles.avatarCircleCenter, { backgroundColor: '#22D3EE' }]}>
+                            <Text style={styles.avatarTextCenter}>{rank1.initials}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.podiumNameCenter} numberOfLines={1}>
+                          {rank1.name}
+                        </Text>
+                        <View style={[styles.pointsPillCenter, { backgroundColor: 'rgba(34, 211, 238, 0.35)' }]}>
+                          <Text style={[styles.pointsPillTextCenter, { color: '#67E8F9' }]}>
+                            {rank1.points.toLocaleString()} pts
+                          </Text>
+                        </View>
                       </View>
-                      <View style={[styles.avatarCircleCenter, { backgroundColor: '#22D3EE' }]}>
-                        <Text style={styles.avatarTextCenter}>{rank1.initials}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.podiumNameCenter} numberOfLines={1}>
-                      {rank1.name}
-                    </Text>
-                    <View style={[styles.pointsPillCenter, { backgroundColor: 'rgba(34, 211, 238, 0.35)' }]}>
-                      <Text style={[styles.pointsPillTextCenter, { color: '#67E8F9' }]}>
-                        {rank1.points.toLocaleString()} pts
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
+                    ) : null}
 
-                {/* Rank #3 (Right - Elena Cruz) */}
-                {rank3 ? (
-                  <View style={[styles.podiumCol, styles.podiumColSide]}>
-                    <View style={styles.avatarWrapper}>
-                      <View style={[styles.rankBadge, { backgroundColor: '#F97316' }]}>
-                        <Text style={[styles.rankBadgeText, { color: '#FFFFFF' }]}>3</Text>
+                    {/* Rank #3 (Right) */}
+                    {rank3 ? (
+                      <View style={[styles.podiumCol, styles.podiumColSide]}>
+                        <View style={styles.avatarWrapper}>
+                          <View style={[styles.rankBadge, { backgroundColor: '#F97316' }]}>
+                            <Text style={[styles.rankBadgeText, { color: '#FFFFFF' }]}>3</Text>
+                          </View>
+                          <View style={[styles.avatarCircle, { backgroundColor: '#F43F5E' }]}>
+                            <Text style={styles.avatarText}>{rank3.initials}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.podiumName} numberOfLines={1}>
+                          {rank3.name}
+                        </Text>
+                        <View style={[styles.pointsPill, { backgroundColor: 'rgba(244, 63, 94, 0.35)' }]}>
+                          <Text style={[styles.pointsPillText, { color: '#FDA4AF' }]}>
+                            {rank3.points.toLocaleString()} pts
+                          </Text>
+                        </View>
                       </View>
-                      <View style={[styles.avatarCircle, { backgroundColor: '#F43F5E' }]}>
-                        <Text style={styles.avatarText}>{rank3.initials}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.podiumName} numberOfLines={1}>
-                      {rank3.name}
-                    </Text>
-                    <View style={[styles.pointsPill, { backgroundColor: 'rgba(244, 63, 94, 0.35)' }]}>
-                      <Text style={[styles.pointsPillText, { color: '#FDA4AF' }]}>
-                        {rank3.points.toLocaleString()} pts
-                      </Text>
-                    </View>
+                    ) : null}
                   </View>
-                ) : null}
+                ) : (
+                  /* TOP 3 PODIUM FOR DEPARTMENTS */
+                  <View style={styles.podiumRow}>
+                    {/* Department Rank #2 (Left) */}
+                    {deptRank2 ? (
+                      <View style={[styles.podiumCol, styles.podiumColSide]}>
+                        <View style={styles.avatarWrapper}>
+                          <View style={[styles.rankBadge, { backgroundColor: '#94A3B8' }]}>
+                            <Text style={styles.rankBadgeText}>2</Text>
+                          </View>
+                          <View style={[styles.avatarCircle, { backgroundColor: deptRank2.color || '#8B5CF6' }]}>
+                            <Text style={styles.avatarText}>{getDeptInitials(deptRank2.name)}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.podiumName} numberOfLines={1}>
+                          {deptRank2.name}
+                        </Text>
+                        <View style={[styles.pointsPill, { backgroundColor: 'rgba(139, 92, 246, 0.35)' }]}>
+                          <Text style={[styles.pointsPillText, { color: '#C4B5FD' }]}>
+                            {deptRank2.points.toLocaleString()} pts
+                          </Text>
+                        </View>
+                      </View>
+                    ) : null}
+
+                    {/* Department Rank #1 (Center) */}
+                    {deptRank1 ? (
+                      <View style={[styles.podiumCol, styles.podiumColCenter]}>
+                        <View style={styles.avatarWrapperCenter}>
+                          <View style={[styles.rankBadgeCenter, { backgroundColor: '#A3E635' }]}>
+                            <Text style={styles.rankBadgeTextCenter}>1</Text>
+                          </View>
+                          <View style={[styles.avatarCircleCenter, { backgroundColor: deptRank1.color || '#22D3EE' }]}>
+                            <Text style={styles.avatarTextCenter}>{getDeptInitials(deptRank1.name)}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.podiumNameCenter} numberOfLines={1}>
+                          {deptRank1.name}
+                        </Text>
+                        <View style={[styles.pointsPillCenter, { backgroundColor: 'rgba(34, 211, 238, 0.35)' }]}>
+                          <Text style={[styles.pointsPillTextCenter, { color: '#67E8F9' }]}>
+                            {deptRank1.points.toLocaleString()} pts
+                          </Text>
+                        </View>
+                      </View>
+                    ) : null}
+
+                    {/* Department Rank #3 (Right) */}
+                    {deptRank3 ? (
+                      <View style={[styles.podiumCol, styles.podiumColSide]}>
+                        <View style={styles.avatarWrapper}>
+                          <View style={[styles.rankBadge, { backgroundColor: '#F97316' }]}>
+                            <Text style={[styles.rankBadgeText, { color: '#FFFFFF' }]}>3</Text>
+                          </View>
+                          <View style={[styles.avatarCircle, { backgroundColor: deptRank3.color || '#F43F5E' }]}>
+                            <Text style={styles.avatarText}>{getDeptInitials(deptRank3.name)}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.podiumName} numberOfLines={1}>
+                          {deptRank3.name}
+                        </Text>
+                        <View style={[styles.pointsPill, { backgroundColor: 'rgba(244, 63, 94, 0.35)' }]}>
+                          <Text style={[styles.pointsPillText, { color: '#FDA4AF' }]}>
+                            {deptRank3.points.toLocaleString()} pts
+                          </Text>
+                        </View>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
               </View>
-            ) : null}
+            </ImageBackground>
           </View>
         </View>
 
@@ -270,36 +431,44 @@ export default function LeaderboardScreen() {
           <View style={styles.yourPositionCard}>
             <Text style={styles.posTag}>YOUR POSITION</Text>
             <View style={styles.posBodyRow}>
-              <View style={styles.posLeft}>
-                <Text style={styles.posRankText}>#{currentUser.rank}</Text>
-                <View style={styles.posDeltaRow}>
-                  <Ionicons name="arrow-up" size={14} color={colors.accentGreen} />
-                  <Text style={styles.posDeltaText}>{currentUser.deltaToday} today</Text>
+              <View style={styles.posLeftCol}>
+                <View style={styles.posRankRow}>
+                  <Text style={styles.posRankText}>#{currentUser.rank}</Text>
+                  {currentUser.deltaToday ? (
+                    <View style={styles.posDeltaRow}>
+                      <Ionicons name="arrow-up" size={14} color={colors.accentGreen} />
+                      <Text style={styles.posDeltaText}>{currentUser.deltaToday} today</Text>
+                    </View>
+                  ) : null}
                 </View>
+                {currentUser.departmentName ? (
+                  <Text style={styles.posDeptText}>{currentUser.departmentName}</Text>
+                ) : null}
               </View>
 
               <View style={styles.posRight}>
                 <Text style={styles.posPointsText}>{currentUser.points.toLocaleString()} pts</Text>
-                <Text style={styles.posGapText}>
-                  {currentUser.pointsBehindPrev} pts behind #{currentUser.rank - 1}
-                </Text>
               </View>
             </View>
           </View>
         ) : null}
 
+        {/* BLUE ACCENT DIVIDER LINE FOR DEPARTMENT VIEW */}
+        {viewType === 'Department' && (
+          <View style={styles.blueDividerLine} />
+        )}
+
         {/* SECTION HEADER TITLE */}
-        <View style={styles.rankingsHeaderRowContainer}>
+        <View style={[styles.rankingsHeaderRowContainer, viewType === 'Department' && styles.deptRankingsHeaderRowContainer]}>
           <View style={styles.rankingsHeaderRow}>
             <Text style={styles.rankingsTitle}>
               {viewType === 'Individual' ? 'ALL RANKINGS' : 'DEPARTMENT OVERVIEW'}
             </Text>
-            <Text style={styles.liveTag}>Live</Text>
           </View>
         </View>
       </View>
     );
-  }, [viewType, rank1, rank2, rank3, currentUser]);
+  }, [viewType, rank1, rank2, rank3, deptRank1, deptRank2, deptRank3, currentUser, getDeptInitials]);
 
   if (loading && userEntries.length === 0 && deptEntries.length === 0) {
     return (
@@ -372,9 +541,9 @@ const styles = StyleSheet.create({
   },
   heroBackground: {
     width: '100%',
-    paddingTop: Platform.OS === 'ios' ? 12 : 20,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 8 : 12,
+    paddingBottom: 0,
+    paddingHorizontal: 0,
     position: 'relative',
     overflow: 'hidden',
   },
@@ -394,13 +563,15 @@ const styles = StyleSheet.create({
   },
   heroContent: {
     zIndex: 2,
+    width: '100%',
   },
 
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
+    paddingHorizontal: 20,
   },
   headerTag: {
     fontSize: 11,
@@ -430,7 +601,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(17, 22, 34, 0.85)',
     borderRadius: 24,
     padding: 4,
-    marginBottom: 24,
+    marginBottom: 12,
+    marginHorizontal: 20,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
   },
@@ -452,12 +624,33 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontWeight: '700',
   },
+  podiumContainerCard: {
+    width: '100%',
+    borderRadius: 0,
+    overflow: 'hidden',
+    borderWidth: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    backgroundColor: 'transparent',
+  },
+  podiumContainerImage: {
+    width: '100%',
+    borderRadius: 0,
+    opacity: 1,
+    resizeMode: 'cover',
+  },
+  podiumContainerOverlay: {
+    width: '100%',
+    backgroundColor: 'transparent',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
   podiumRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-around',
-    paddingTop: 10,
-    paddingBottom: 8,
+    paddingTop: 6,
+    paddingBottom: 4,
   },
   podiumCol: {
     alignItems: 'center',
@@ -589,7 +782,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#161F2E',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    marginBottom: 20,
+    marginTop: 0,
+    marginBottom: 12,
   },
   posTag: {
     fontSize: 11,
@@ -603,10 +797,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-end',
   },
-  posLeft: {
+  posLeftCol: {
+    flexDirection: 'column',
+  },
+  posRankRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 8,
+  },
+  posDeptText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.accentCyan,
+    marginTop: 2,
   },
   posRankText: {
     fontSize: 36,
@@ -636,8 +839,20 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginTop: 2,
   },
+  blueDividerLine: {
+    height: 2,
+    backgroundColor: '#0284C7',
+    width: '100%',
+    marginTop: 0,
+    marginBottom: 16,
+  },
   rankingsHeaderRowContainer: {
     paddingHorizontal: 20,
+    marginBottom: 8,
+  },
+  deptRankingsHeaderRowContainer: {
+    paddingHorizontal: 20,
+    marginTop: 4,
     marginBottom: 8,
   },
   rankingsHeaderRow: {
@@ -751,5 +966,86 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     color: '#000000',
+  },
+  deptRowContainer: {
+    backgroundColor: '#090D15',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#161F2E',
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  deptRowExpandedHeader: {
+    backgroundColor: 'rgba(34, 211, 238, 0.08)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(34, 211, 238, 0.2)',
+  },
+  deptPointsRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chevronBox: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deptDropdownList: {
+    backgroundColor: '#060A11',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  deptDropdownHeader: {
+    marginBottom: 8,
+  },
+  deptDropdownTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.accentCyan,
+    letterSpacing: 1,
+  },
+  deptMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  deptMemberRank: {
+    width: 28,
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  deptMemberAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  deptMemberAvatarText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  deptMemberInfo: {
+    flex: 1,
+  },
+  deptMemberName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  deptMemberPoints: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.accentGreen,
   },
 });
