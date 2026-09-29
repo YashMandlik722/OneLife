@@ -13,7 +13,7 @@ const memoryCache = new Map<string, CacheEntry<any>>();
 export const TTL = {
   USER_PROFILE: 10 * 60 * 1000,  // 10 minutes
   DASHBOARD: 3 * 60 * 1000,      // 3 minutes
-  LEADERBOARD: 1 * 60 * 1000,    // 1 minute
+  LEADERBOARD: 5 * 60 * 1000,    // 5 minutes (300,000ms)
 };
 
 /**
@@ -45,7 +45,7 @@ export function getCache<T>(key: string): T | null {
 
 /**
  * Execute API call using Stale-While-Revalidate (SWR):
- * 1. Returns cached data immediately if available.
+ * 1. Returns cached data immediately if available (unless forceRefresh is true).
  * 2. Fetches fresh data from API in background.
  * 3. Updates cache & notifies via callback on fresh data.
  */
@@ -53,33 +53,35 @@ export async function fetchWithCache<T>(
   cacheKey: string,
   fetchFn: () => Promise<{ success: boolean; data?: T; message?: string }>,
   ttlMs: number = TTL.DASHBOARD,
-  onFreshData?: (freshData: T) => void
+  onFreshData?: (freshData: T) => void,
+  forceRefresh: boolean = false
 ): Promise<{ data: T | null; isCached: boolean; error?: string }> {
-  // 1. Check cache first
-  const cachedData = getCache<T>(cacheKey);
-
-  // 2. Prepare API call
-  const apiPromise = fetchFn().then((res) => {
-    if (res.success && res.data) {
-      setCache(cacheKey, res.data, ttlMs);
-      if (onFreshData) {
-        onFreshData(res.data);
-      }
+  // 1. Check cache first unless forceRefresh is true
+  if (!forceRefresh) {
+    const cachedData = getCache<T>(cacheKey);
+    if (cachedData) {
+      // Revalidate asynchronously in background
+      fetchFn().then((res) => {
+        if (res.success && res.data) {
+          setCache(cacheKey, res.data, ttlMs);
+          if (onFreshData) {
+            onFreshData(res.data);
+          }
+        }
+      }).catch((err) => {
+        console.warn(`Background revalidation error [${cacheKey}]:`, err);
+      });
+      return { data: cachedData, isCached: true };
     }
-    return res;
-  });
-
-  // If cached data is available, return it immediately and revalidate in background
-  if (cachedData) {
-    apiPromise.catch((err) => {
-      console.warn(`Background revalidation error [${cacheKey}]:`, err);
-    });
-    return { data: cachedData, isCached: true };
   }
 
-  // Otherwise wait for network response
-  const apiRes = await apiPromise;
+  // 2. Otherwise wait for network response
+  const apiRes = await fetchFn();
   if (apiRes.success && apiRes.data) {
+    setCache(cacheKey, apiRes.data, ttlMs);
+    if (onFreshData) {
+      onFreshData(apiRes.data);
+    }
     return { data: apiRes.data, isCached: false };
   }
 

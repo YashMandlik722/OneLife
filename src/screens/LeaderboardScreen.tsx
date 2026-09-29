@@ -9,17 +9,18 @@ import {
   ActivityIndicator,
   Platform,
   Image,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 
 import {
   fetchUserLeaderboard,
   fetchDepartmentLeaderboard,
 } from '../api/leaderboard';
+import { getCache } from '../utils/cache';
 
 import { LeaderboardUserEntry, LeaderboardDepartmentEntry } from '../types/database';
 
@@ -28,29 +29,48 @@ const leaderboardBg = require('../../assets/leaderboard_bg.png');
 
 export default function LeaderboardScreen() {
   const [viewType, setViewType] = useState<'Individual' | 'Department'>('Individual');
-  const [userEntries, setUserEntries] = useState<LeaderboardUserEntry[]>([]);
-  const [deptEntries, setDeptEntries] = useState<LeaderboardDepartmentEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  
+  // Instant synchronous cache initialization to eliminate 2-3s navigation delay
+  const [userEntries, setUserEntries] = useState<LeaderboardUserEntry[]>(() => {
+    return getCache<LeaderboardUserEntry[]>('leaderboard_users') || [];
+  });
+  const [deptEntries, setDeptEntries] = useState<LeaderboardDepartmentEntry[]>(() => {
+    return getCache<LeaderboardDepartmentEntry[]>('leaderboard_departments') || [];
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    const cachedUsers = getCache<LeaderboardUserEntry[]>('leaderboard_users');
+    return !cachedUsers || cachedUsers.length === 0;
+  });
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
-  const loadLeaderboards = useCallback(async () => {
-    setLoading(true);
+  const loadLeaderboards = useCallback(async (forceRefresh: boolean = false) => {
+    if (userEntries.length === 0 && deptEntries.length === 0 && !forceRefresh) {
+      setLoading(true);
+    }
     try {
       // 1. Fetch User Leaderboard with SWR Cache
-      const userRes = await fetchUserLeaderboard((freshUsers) => {
-        if (freshUsers && freshUsers.length > 0) {
-          setUserEntries(freshUsers);
-        }
-      });
+      const userRes = await fetchUserLeaderboard(
+        (freshUsers) => {
+          if (freshUsers && freshUsers.length > 0) {
+            setUserEntries(freshUsers);
+          }
+        },
+        undefined,
+        forceRefresh
+      );
       if (userRes.data && userRes.data.length > 0) {
         setUserEntries(userRes.data);
       }
 
       // 2. Fetch Department Leaderboard with SWR Cache
-      const deptRes = await fetchDepartmentLeaderboard((freshDepts) => {
-        if (freshDepts && freshDepts.length > 0) {
-          setDeptEntries(freshDepts);
-        }
-      });
+      const deptRes = await fetchDepartmentLeaderboard(
+        (freshDepts) => {
+          if (freshDepts && freshDepts.length > 0) {
+            setDeptEntries(freshDepts);
+          }
+        },
+        forceRefresh
+      );
       if (deptRes.data && deptRes.data.length > 0) {
         setDeptEntries(deptRes.data);
       }
@@ -58,11 +78,17 @@ export default function LeaderboardScreen() {
       console.warn('Failed to load leaderboards from API:', err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, []);
+  }, [userEntries.length, deptEntries.length]);
 
   useEffect(() => {
-    loadLeaderboards();
+    loadLeaderboards(false);
+  }, []);
+
+  const handlePullRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadLeaderboards(true);
   }, [loadLeaderboards]);
 
   const individualLeaderboard = userEntries;
@@ -100,7 +126,16 @@ export default function LeaderboardScreen() {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          bounces={false}
+          bounces={true}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handlePullRefresh}
+              tintColor="#22D3EE"
+              colors={['#22D3EE', '#A3E635']}
+              progressBackgroundColor="#090D15"
+            />
+          }
         >
           {/* TOP HERO CONTAINER */}
           <View style={styles.heroBackground}>
@@ -114,8 +149,8 @@ export default function LeaderboardScreen() {
                 </View>
 
                 <View style={styles.headerRightActions}>
-                  <TouchableOpacity style={styles.infoButton} onPress={loadLeaderboards} disabled={loading} activeOpacity={0.7}>
-                    {loading ? (
+                  <TouchableOpacity style={styles.infoButton} onPress={() => { setRefreshing(true); loadLeaderboards(true); }} disabled={loading || refreshing} activeOpacity={0.7}>
+                    {loading || refreshing ? (
                       <ActivityIndicator size="small" color="#22D3EE" />
                     ) : (
                       <Ionicons name="refresh-outline" size={20} color="#9CA3AF" />

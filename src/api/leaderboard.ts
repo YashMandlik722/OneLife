@@ -143,7 +143,8 @@ export function transformDepartmentLeaderboardItems(
  */
 export async function fetchUserLeaderboard(
   onFreshData?: (items: LeaderboardUserEntry[]) => void,
-  currentEmail?: string
+  currentEmail?: string,
+  forceRefresh: boolean = false
 ): Promise<{ data: LeaderboardUserEntry[] | null; isCached: boolean; error?: string }> {
   return fetchWithCache<LeaderboardUserEntry[]>(
     'leaderboard_users',
@@ -158,7 +159,8 @@ export async function fetchUserLeaderboard(
       return { success: false, message: res.message };
     },
     TTL.LEADERBOARD,
-    onFreshData
+    onFreshData,
+    forceRefresh
   );
 }
 
@@ -167,7 +169,8 @@ export async function fetchUserLeaderboard(
  * GET /api/v1/leaderboards/departments
  */
 export async function fetchDepartmentLeaderboard(
-  onFreshData?: (items: LeaderboardDepartmentEntry[]) => void
+  onFreshData?: (items: LeaderboardDepartmentEntry[]) => void,
+  forceRefresh: boolean = false
 ): Promise<{ data: LeaderboardDepartmentEntry[] | null; isCached: boolean; error?: string }> {
   return fetchWithCache<LeaderboardDepartmentEntry[]>(
     'leaderboard_departments',
@@ -182,6 +185,25 @@ export async function fetchDepartmentLeaderboard(
       return { success: false, message: res.message };
     },
     TTL.LEADERBOARD,
-    onFreshData
+    onFreshData,
+    forceRefresh
   );
 }
+
+/**
+ * Silent background pre-fetch for Leaderboard data (User & Dept)
+ * Forces cache refresh every 5 minutes regardless of current active screen.
+ */
+export async function prefetchLeaderboard(currentEmail?: string): Promise<void> {
+  try {
+    console.log('[LeaderboardSync] Background 5-min prefetch triggering...');
+    await Promise.all([
+      fetchUserLeaderboard(undefined, currentEmail, true),
+      fetchDepartmentLeaderboard(undefined, true),
+    ]);
+    console.log('[LeaderboardSync] Background 5-min prefetch completed.');
+  } catch (err) {
+    console.warn('[LeaderboardSync] Background prefetch error:', err);
+  }
+}
+

@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Platform,
   Image,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -26,6 +27,7 @@ export default function MeScreen() {
   const [dashboardData, setDashboardData] = useState<UserDashboardData | null>(null);
   const [userProfile, setUserProfile] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
   const loadUserData = useCallback(async () => {
     // 1. Fetch User Dashboard with SWR Cache
@@ -46,7 +48,9 @@ export default function MeScreen() {
   }, []);
 
   const fetchHealthData = useCallback(async () => {
-    setLoading(true);
+    if (!dashboardData && !userProfile) {
+      setLoading(true);
+    }
     try {
       await loadUserData();
 
@@ -67,11 +71,17 @@ export default function MeScreen() {
       console.warn('Failed to load health data in MeScreen:', e);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [loadUserData, userProfile?.id]);
+  }, [loadUserData, userProfile?.id, dashboardData]);
 
   useEffect(() => {
     fetchHealthData();
+  }, [fetchHealthData]);
+
+  const handlePullRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchHealthData();
   }, [fetchHealthData]);
 
   // Format Today's Date (e.g. MON, SEP 28)
@@ -115,7 +125,19 @@ export default function MeScreen() {
 
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handlePullRefresh}
+            tintColor={colors.accentCyan}
+            colors={[colors.accentCyan, colors.accentGreen]}
+            progressBackgroundColor="#05070D"
+          />
+        }
+      >
         {/* Top Header: Identity & Date */}
         <View style={styles.header}>
           <View>

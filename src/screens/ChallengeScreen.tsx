@@ -9,6 +9,7 @@ import {
   Platform,
   Modal,
   Image,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -23,6 +24,7 @@ import { Challenge } from '../types/database';
 export default function ChallengeScreen() {
   const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [generatingAi, setGeneratingAi] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState<boolean>(false);
@@ -64,7 +66,9 @@ export default function ChallengeScreen() {
   };
 
   const syncHealthData = useCallback(async () => {
-    setLoading(true);
+    if (!healthData && !activeChallenge) {
+      setLoading(true);
+    }
     setError(null);
     try {
       await loadChallenges();
@@ -76,11 +80,17 @@ export default function ChallengeScreen() {
       setError(msg);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [loadChallenges]);
+  }, [loadChallenges, healthData, activeChallenge]);
 
   useEffect(() => {
     syncHealthData();
+  }, [syncHealthData]);
+
+  const handlePullRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await syncHealthData();
   }, [syncHealthData]);
 
   const userSteps = healthData?.steps ?? 0;
@@ -111,7 +121,19 @@ export default function ChallengeScreen() {
 
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handlePullRefresh}
+            tintColor={colors.accentGreen}
+            colors={[colors.accentGreen, colors.accentCyan]}
+            progressBackgroundColor="#000000"
+          />
+        }
+      >
         {/* Top Header Bar */}
         <View style={styles.topHeaderBar}>
           <Text style={styles.topHeaderTitle}>Challenges</Text>
