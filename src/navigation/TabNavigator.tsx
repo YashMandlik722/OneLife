@@ -8,7 +8,11 @@ import MeScreen from '../screens/MeScreen';
 
 export type TabType = 'Challenge' | 'Leaderboard' | 'Me';
 
-export default function TabNavigator() {
+interface TabNavigatorProps {
+  onSignOut?: () => void;
+}
+
+export default function TabNavigator({ onSignOut }: TabNavigatorProps) {
   const [activeTab, setActiveTab] = useState<TabType>('Challenge');
 
   const renderScreen = () => {
