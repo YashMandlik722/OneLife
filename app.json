@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.commitissues.onelife",
@@ -15,7 +16,8 @@
       },
       "entitlements": {
         "com.apple.developer.healthkit": true
-      }
+      },
+      "appleTeamId": "79SD3C5XQK"
     },
     "android": {
       "package": "com.commitissues.onelife",
@@ -39,9 +41,10 @@
     "plugins": [
       "expo-dev-client",
       [
-        "react-native-health",
+        "@kayzmann/expo-healthkit",
         {
-          "healthSharePermission": "This app requires HealthKit access to read your daily step count."
+          "healthShareUsageDescription": "This app requires HealthKit access to read your daily step count.",
+          "healthUpdateUsageDescription": "This app requires HealthKit access to read your daily step count."
         }
       ],
       "react-native-health-connect",

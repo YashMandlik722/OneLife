@@ -1,66 +1,6 @@
-import AppleHealthKit, { HealthKitPermissions } from 'react-native-health';
+import * as HealthKit from '@kayzmann/expo-healthkit';
 import { HealthProvider, HealthData } from './types';
 import { mockHealthProvider } from './mock';
-
-const permissions: HealthKitPermissions = {
-  permissions: {
-    read: [
-      AppleHealthKit.Constants.Permissions.Steps,
-      AppleHealthKit.Constants.Permissions.DistanceWalkingRunning,
-      AppleHealthKit.Constants.Permissions.FlightsClimbed,
-      AppleHealthKit.Constants.Permissions.ActiveEnergyBurned,
-    ],
-    write: [],
-  },
-};
-
-const initHealthKitPromise = (): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    if (!AppleHealthKit || typeof AppleHealthKit.initHealthKit !== 'function') {
-      return reject(new Error('HealthKit native module is not available'));
-    }
-    AppleHealthKit.initHealthKit(permissions, (error: string) => {
-      if (error) {
-        return reject(new Error(`HealthKit init failed: ${error}`));
-      }
-      resolve();
-    });
-  });
-};
-
-const getStepCountPromise = (options: { date: string }): Promise<number> => {
-  return new Promise((resolve) => {
-    AppleHealthKit.getStepCount(options, (err: Object, results: { value: number }) => {
-      if (err || !results || typeof results.value !== 'number') {
-        return resolve(0);
-      }
-      resolve(Math.round(results.value));
-    });
-  });
-};
-
-const getDistancePromise = (options: { date: string }): Promise<number> => {
-  return new Promise((resolve) => {
-    AppleHealthKit.getDistanceWalkingRunning(options, (err: Object, results: { value: number }) => {
-      if (err || !results || typeof results.value !== 'number') {
-        return resolve(0);
-      }
-      // HealthKit distance is usually in meters or miles, convert to km
-      resolve(Number((results.value / 1000).toFixed(2)));
-    });
-  });
-};
-
-const getFlightsClimbedPromise = (options: { date: string }): Promise<number> => {
-  return new Promise((resolve) => {
-    AppleHealthKit.getFlightsClimbed(options, (err: Object, results: { value: number }) => {
-      if (err || !results || typeof results.value !== 'number') {
-        return resolve(0);
-      }
-      resolve(Math.round(results.value));
-    });
-  });
-};
 
 export const iosHealthProvider: HealthProvider = {
   async getTodaySteps(): Promise<number> {
@@ -70,15 +10,28 @@ export const iosHealthProvider: HealthProvider = {
 
   async getTodayHealthData(): Promise<HealthData> {
     try {
-      await initHealthKitPromise();
+      if (!HealthKit.isAvailable || typeof HealthKit.isAvailable !== 'function' || !HealthKit.isAvailable()) {
+        console.warn('HealthKit is not available on this device, falling back to mock metrics');
+        return await mockHealthProvider.getTodayHealthData();
+      }
+
+      await HealthKit.requestAuthorization(
+        ['Steps', 'Distance', 'FlightsClimbed', 'ActiveEnergy'],
+        []
+      );
 
       const now = new Date();
       const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const options = { date: startOfToday.toISOString(), includeManuallyAdded: false };
 
-      const steps = await getStepCountPromise(options);
-      let distanceKm = await getDistancePromise(options);
-      let floorsClimbed = await getFlightsClimbedPromise(options);
+      const [rawSteps, rawDistanceMeters, rawFloors] = await Promise.all([
+        HealthKit.getSteps(startOfToday, now).catch(() => 0),
+        HealthKit.getTotalDistance(startOfToday, now).catch(() => 0),
+        HealthKit.getFlightsClimbed(startOfToday, now).catch(() => 0),
+      ]);
+
+      const steps = Math.round(rawSteps || 0);
+      let distanceKm = Number(((rawDistanceMeters || 0) / 1000).toFixed(2));
+      let floorsClimbed = Math.round(rawFloors || 0);
 
       if (distanceKm === 0 && steps > 0) {
         distanceKm = Number((steps * 0.000762).toFixed(1));
@@ -89,6 +42,13 @@ export const iosHealthProvider: HealthProvider = {
       }
 
       const caloriesKcal = Math.round(steps * 0.04);
+
+      console.log('Real HealthKit data retrieved via @kayzmann/expo-healthkit:', {
+        steps,
+        distanceKm,
+        floorsClimbed,
+        caloriesKcal,
+      });
 
       return {
         steps,
