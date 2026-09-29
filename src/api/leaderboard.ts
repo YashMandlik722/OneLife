@@ -9,6 +9,7 @@
 import { apiFetch } from './client';
 import { fetchWithCache, TTL } from '../utils/cache';
 import { LeaderboardUserEntry, LeaderboardDepartmentEntry } from '../types/database';
+import { setActiveUserId } from './client';
 
 export interface ApiUserLeaderboardItem {
   rank: number;
@@ -65,6 +66,10 @@ export function transformUserLeaderboardItems(
       Boolean(currentEmail && item.user?.email?.toLowerCase() === currentEmail.toLowerCase()) ||
       item.user?.email?.includes('yash.mandlik') ||
       false;
+
+    if (isCurrentUser && item.user?.id) {
+      setActiveUserId(item.user.id);
+    }
 
     let avatarBgColor = '#27344D';
     let avatarTextColor = '#FFFFFF';

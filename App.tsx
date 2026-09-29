@@ -15,7 +15,7 @@ export default function App() {
     let leaderboardInterval: ReturnType<typeof setInterval> | null = null;
 
     if (authStep === 'authenticated') {
-      startForegroundSync();
+      startForegroundSync(1);
 
       // 1. Initial prefetch on App Launch / Authentication
       prefetchLeaderboard(userEmail);

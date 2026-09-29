@@ -2,7 +2,7 @@
  * User & User Dashboard API Service with SWR Caching
  */
 
-import { apiFetch, ApiResponse } from './client';
+import { apiFetch, ApiResponse, setActiveUserId } from './client';
 import { fetchWithCache, TTL, getCache, setCache } from '../utils/cache';
 import { User, Department, Activity, PointTransaction } from '../types/database';
 
@@ -51,9 +51,18 @@ export async function fetchMeProfile(
 ): Promise<{ data: User | null; isCached: boolean; error?: string }> {
   return fetchWithCache<User>(
     'user_me_profile',
-    () => apiFetch<User>('/api/v1/users/me'),
+    async () => {
+      const res = await apiFetch<User>('/api/v1/users/me');
+      if (res.success && res.data?.id) {
+        setActiveUserId(res.data.id);
+      }
+      return res;
+    },
     TTL.USER_PROFILE,
-    onFreshData
+    (freshUser) => {
+      if (freshUser?.id) setActiveUserId(freshUser.id);
+      if (onFreshData) onFreshData(freshUser);
+    }
   );
 }
 
@@ -66,9 +75,18 @@ export async function fetchUserDashboard(
 ): Promise<{ data: UserDashboardData | null; isCached: boolean; error?: string }> {
   return fetchWithCache<UserDashboardData>(
     'user_me_dashboard',
-    () => apiFetch<UserDashboardData>('/api/v1/users/me/dashboard'),
+    async () => {
+      const res = await apiFetch<UserDashboardData>('/api/v1/users/me/dashboard');
+      if (res.success && res.data?.user?.id) {
+        setActiveUserId(res.data.user.id);
+      }
+      return res;
+    },
     TTL.DASHBOARD,
-    onFreshData
+    (freshDash) => {
+      if (freshDash?.user?.id) setActiveUserId(freshDash.user.id);
+      if (onFreshData) onFreshData(freshDash);
+    }
   );
 }
 

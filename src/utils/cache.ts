@@ -44,10 +44,9 @@ export function getCache<T>(key: string): T | null {
 }
 
 /**
- * Execute API call using Stale-While-Revalidate (SWR):
- * 1. Returns cached data immediately if available (unless forceRefresh is true).
- * 2. Fetches fresh data from API in background.
- * 3. Updates cache & notifies via callback on fresh data.
+ * Execute API call with RAM Caching:
+ * 1. Returns cached data immediately without network call if valid data exists in RAM.
+ * 2. Fetches from API only when cache is expired or forceRefresh is true.
  */
 export async function fetchWithCache<T>(
   cacheKey: string,
@@ -56,26 +55,16 @@ export async function fetchWithCache<T>(
   onFreshData?: (freshData: T) => void,
   forceRefresh: boolean = false
 ): Promise<{ data: T | null; isCached: boolean; error?: string }> {
-  // 1. Check cache first unless forceRefresh is true
+  // 1. Check RAM cache first if forceRefresh is false
   if (!forceRefresh) {
     const cachedData = getCache<T>(cacheKey);
     if (cachedData) {
-      // Revalidate asynchronously in background
-      fetchFn().then((res) => {
-        if (res.success && res.data) {
-          setCache(cacheKey, res.data, ttlMs);
-          if (onFreshData) {
-            onFreshData(res.data);
-          }
-        }
-      }).catch((err) => {
-        console.warn(`Background revalidation error [${cacheKey}]:`, err);
-      });
+      // Return fresh RAM cached data without hitting network
       return { data: cachedData, isCached: true };
     }
   }
 
-  // 2. Otherwise wait for network response
+  // 2. Fetch from network when cache is missing/expired or forceRefresh is true
   const apiRes = await fetchFn();
   if (apiRes.success && apiRes.data) {
     setCache(cacheKey, apiRes.data, ttlMs);

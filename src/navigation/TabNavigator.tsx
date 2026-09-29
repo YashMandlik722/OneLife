@@ -17,17 +17,11 @@ export default function TabNavigator({ onSignOut }: TabNavigatorProps) {
 
   return (
     <View style={styles.container}>
-      {/* Screen Body: Persistent mounting for instant 0ms tab switching */}
+      {/* Screen Body */}
       <View style={styles.screenContainer}>
-        <View style={[styles.screenWrapper, activeTab !== 'Challenge' && styles.hiddenScreen]}>
-          <ChallengeScreen />
-        </View>
-        <View style={[styles.screenWrapper, activeTab !== 'Leaderboard' && styles.hiddenScreen]}>
-          <LeaderboardScreen />
-        </View>
-        <View style={[styles.screenWrapper, activeTab !== 'Me' && styles.hiddenScreen]}>
-          <MeScreen />
-        </View>
+        {activeTab === 'Challenge' && <ChallengeScreen />}
+        {activeTab === 'Leaderboard' && <LeaderboardScreen />}
+        {activeTab === 'Me' && <MeScreen />}
       </View>
 
       {/* Custom Bottom Tab Bar */}
@@ -103,12 +97,6 @@ const styles = StyleSheet.create({
   },
   screenContainer: {
     flex: 1,
-  },
-  screenWrapper: {
-    flex: 1,
-  },
-  hiddenScreen: {
-    display: 'none',
   },
   tabBar: {
     flexDirection: 'row',
