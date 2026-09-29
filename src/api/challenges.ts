@@ -67,34 +67,6 @@ export async function fetchChallenges(
 }
 
 /**
- * Generate an AI Challenge for a team using Google Gemini API on backend
- * POST /api/v1/challenges/generate
- */
-export async function generateAiChallenge(
-  payload: GenerateChallengePayload = {}
-): Promise<ApiResponse<Challenge>> {
-  const requestBody = {
-    team_id: payload.team_id || 1,
-    preferred_unit: payload.preferred_unit || 'steps',
-  };
-
-  const response = await apiFetch<Challenge>('/api/v1/challenges/generate', {
-    method: 'POST',
-    body: JSON.stringify(requestBody),
-  });
-
-  if (!response.success) {
-    const friendlyMsg = getFriendlyErrorMessage(response.message, undefined, 'general');
-    return {
-      success: false,
-      message: friendlyMsg,
-    };
-  }
-
-  return response;
-}
-
-/**
  * Fetch specific challenge details by ID
  * GET /api/v1/challenges/{id}
  */

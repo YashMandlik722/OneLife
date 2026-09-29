@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,18 +9,479 @@ import {
   Platform,
   Modal,
   Image,
+  ImageBackground,
+  Animated,
+  Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 
-
 import { getHealthProvider, USE_MOCK_HEALTH, HealthData } from '../health';
-import { generateAiChallenge, fetchChallenges } from '../api/challenges';
+import { fetchChallenges } from '../api/challenges';
 import { Challenge } from '../types/database';
+import AIProcessingAnimation from '../components/AIProcessingAnimation';
+
+// -----------------------------------------------------------------------------
+// Fitness Background Images
+// -----------------------------------------------------------------------------
+
+const FITNESS_IMAGES = [
+  require('../../assets/fitness_images/exercise1.jpg'),
+  require('../../assets/fitness_images/exercise2.jpg'),
+  require('../../assets/fitness_images/exercise3.jpg'),
+  require('../../assets/fitness_images/exercise4.jpg'),
+  require('../../assets/fitness_images/exercise5.jpg'),
+  require('../../assets/fitness_images/running.jpg'),
+  require('../../assets/fitness_images/running5.jpg'),
+  require('../../assets/fitness_images/running6.jpg'),
+];
+
+// -----------------------------------------------------------------------------
+// Component Props Interfaces
+// -----------------------------------------------------------------------------
+
+interface HeaderBarProps {
+  title: string;
+}
+
+interface HeroCardProps {
+  activeChallenge: Challenge | null;
+  platformLabel: string;
+  onViewDetails: () => void;
+  backgroundImage: any;
+}
+
+interface TeamCardProps {
+  userSteps: number;
+  teamTotalSteps: number;
+  teamGoalSteps: number;
+  teamProgressPercent: number;
+  remainingSteps: number;
+  loading: boolean;
+  onSync: () => void;
+}
+
+interface SmartNudgeCardProps {
+  nudgeText: string;
+}
+
+interface HealthMetricsGridProps {
+  healthData: HealthData | null;
+}
+
+interface ErrorAlertProps {
+  error: string | null;
+}
+
+interface LoadingScreenProps {
+  message?: string;
+}
+
+interface ChallengeDetailModalProps {
+  visible: boolean;
+  onClose: () => void;
+}
+
+interface AiSprintModalProps {
+  visible: boolean;
+  latestAiChallenge: Challenge | null;
+  onClose: () => void;
+}
+
+// -----------------------------------------------------------------------------
+// Local Presentational Components
+// -----------------------------------------------------------------------------
+
+function NativeAIProcessingIntro() {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const pulseAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.15,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0.95,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    const rotateAnimation = Animated.loop(
+      Animated.timing(rotateAnim, {
+        toValue: 1,
+        duration: 4000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+
+    pulseAnimation.start();
+    rotateAnimation.start();
+
+    return () => {
+      pulseAnimation.stop();
+      rotateAnimation.stop();
+    };
+  }, [pulseAnim, rotateAnim]);
+
+  const spin = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  return (
+    <SafeAreaView style={[styles.safeArea, styles.aiIntroContainer]}>
+      <StatusBar style="light" />
+      <View style={styles.aiIntroContent}>
+        <Animated.View
+          style={{
+            transform: [{ scale: pulseAnim }, { rotate: spin }],
+            marginBottom: 20,
+          }}
+        >
+          <AIProcessingAnimation width={260} height={260} />
+        </Animated.View>
+        <Text style={styles.aiIntroTitle}>OLYMPUS AI</Text>
+        <Text style={styles.aiIntroSubtitle}>Initializing Biometric Performance Engine...</Text>
+        <ActivityIndicator size="small" color={colors.accentGreen} style={{ marginTop: 24 }} />
+      </View>
+    </SafeAreaView>
+  );
+}
+
+function LoadingScreen({ message = 'Syncing Live Challenge & Health Data...' }: LoadingScreenProps) {
+  return (
+    <SafeAreaView style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }]}>
+      <StatusBar style="light" />
+      <ActivityIndicator size="large" color={colors.accentCyan} />
+      <Text style={{ color: colors.textSecondary, marginTop: 16, fontSize: 14, fontWeight: '600' }}>
+        {message}
+      </Text>
+    </SafeAreaView>
+  );
+}
+
+function HeaderBar({ title }: HeaderBarProps) {
+  return (
+    <View style={styles.topHeaderBar}>
+      <Text style={styles.topHeaderTitle}>{title}</Text>
+      <Image
+        source={require('../../assets/OneLifeInAppLogo.png')}
+        style={styles.topRightLogo}
+        resizeMode="contain"
+      />
+    </View>
+  );
+}
+
+function HeroCard({ activeChallenge, platformLabel, onViewDetails, backgroundImage }: HeroCardProps) {
+  return (
+    <ImageBackground
+      source={backgroundImage}
+      style={styles.heroCard}
+      imageStyle={styles.heroCardImage}
+      resizeMode="cover"
+    >
+      <View style={styles.heroCardOverlay}>
+        {/* Top Row: AI GENERATED LIVE (Left) & HR: 168 SPM (Right) */}
+        <View style={styles.heroTopRow}>
+          <View style={styles.aiLiveBadge}>
+            <View style={styles.liveDot} />
+            <Ionicons name="sparkles" size={11} color={colors.accentGreen} />
+            <Text style={styles.aiLiveText}>AI GENERATED LIVE</Text>
+          </View>
+
+          <View style={styles.hrBadge}>
+            <Ionicons name="heart" size={13} color="#EF4444" />
+            <Text style={styles.hrBadgeText}>HR: 168 SPM</Text>
+          </View>
+        </View>
+
+        {/* Title & Description */}
+        <View style={styles.heroTextSection}>
+          <Text style={styles.heroEngineTag}>BIOMETRIC PERFORMANCE ENGINE</Text>
+          <Text style={styles.heroTitle}>{activeChallenge?.title || 'The Pulse Relay'}</Text>
+          <Text style={styles.heroDescription}>
+            {activeChallenge?.description || 'Build a shared 24,000 step surge before time runs out.'}
+          </Text>
+        </View>
+
+        {/* Countdown & Provider Row */}
+        <View style={styles.heroTimerRow}>
+          <View style={styles.timerPill}>
+            <Ionicons name="time-outline" size={13} color={colors.accentGreen} />
+            <Text style={styles.timerText}>06:42:18 remaining</Text>
+          </View>
+
+          <View style={styles.providerPill}>
+            <Ionicons
+              name={Platform.OS === 'ios' ? 'heart' : 'fitness'}
+              size={11}
+              color={colors.accentGreen}
+            />
+            <Text style={styles.providerText}>{platformLabel}</Text>
+          </View>
+        </View>
+
+        {/* Action Row: Finish Reward & View Detail Modal */}
+        <View style={styles.heroActionRow}>
+          <View style={styles.rewardPill}>
+            <Ionicons name="trophy" size={14} color={colors.accentGold} />
+            <Text style={styles.rewardPillLabel}>Finish reward:</Text>
+            <Text style={styles.rewardPillPoints}>
+              +{activeChallenge?.points || 120} pts
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.viewDetailBtn}
+            onPress={onViewDetails}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.viewDetailBtnText}>View</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.accentGreen} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </ImageBackground>
+  );
+}
+
+function TeamCard({
+  userSteps,
+  teamTotalSteps,
+  teamGoalSteps,
+  teamProgressPercent,
+  remainingSteps,
+  loading,
+  onSync,
+}: TeamCardProps) {
+  return (
+    <View style={styles.teamCard}>
+      <View style={styles.teamHeader}>
+        <View style={{ flexShrink: 1 }}>
+          <Text style={styles.teamSubtitle}>PARTICIPATING TEAM</Text>
+          <Text style={styles.teamTitle}>Team Kinetic</Text>
+        </View>
+
+        {/* Member Avatars Stack */}
+        <View style={styles.avatarStack}>
+          <View style={[styles.avatarCircle, { backgroundColor: colors.accentGreen, zIndex: 4 }]}>
+            <Text style={styles.avatarText}>M</Text>
+          </View>
+          <View style={[styles.avatarCircle, { backgroundColor: '#F59E0B', zIndex: 3, marginLeft: -10 }]}>
+            <Text style={styles.avatarText}>N</Text>
+          </View>
+          <View style={[styles.avatarCircle, { backgroundColor: '#3B82F6', zIndex: 2, marginLeft: -10 }]}>
+            <Text style={styles.avatarText}>J</Text>
+          </View>
+          <View style={[styles.avatarCircle, { backgroundColor: '#8B5CF6', zIndex: 1, marginLeft: -10 }]}>
+            <Text style={styles.avatarText}>E</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Team Steps Display */}
+      <View style={styles.teamStepsRow}>
+        <Text style={styles.teamStepsBig}>{teamTotalSteps.toLocaleString()}</Text>
+        <Text style={styles.teamStepsGoal}> / {teamGoalSteps.toLocaleString()} steps</Text>
+      </View>
+
+      {/* Progress Bar */}
+      <View style={styles.progressSection}>
+        <View style={styles.progressLabels}>
+          <Text style={styles.progressPercentText}>{teamProgressPercent}% completed</Text>
+          <Text style={styles.remainingStepsText}>
+            {remainingSteps.toLocaleString()} steps to goal
+          </Text>
+        </View>
+        <View style={styles.progressBarTrack}>
+          <View style={[styles.progressBarFill, { width: `${teamProgressPercent}%` }]} />
+        </View>
+      </View>
+
+      {/* Individual Sync Button */}
+      <TouchableOpacity
+        style={styles.syncButton}
+        onPress={onSync}
+        disabled={loading}
+        activeOpacity={0.8}
+      >
+        {loading ? (
+          <ActivityIndicator color={colors.textDark} />
+        ) : (
+          <View style={styles.syncButtonContent}>
+            <Ionicons name="refresh" size={16} color={colors.textDark} style={styles.syncIcon} />
+            <Text style={styles.syncButtonText}>
+              Sync Your Steps ({userSteps.toLocaleString()})
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function SmartNudgeCard({ nudgeText }: SmartNudgeCardProps) {
+  return (
+    <View style={styles.nudgeCard}>
+      <View style={styles.nudgeHeader}>
+        <View style={styles.nudgeBadge}>
+          <Ionicons name="sparkles" size={13} color={colors.accentPurple} />
+          <Text style={styles.nudgeBadgeText}>NOVA AI SMART NUDGE</Text>
+        </View>
+        <Text style={styles.nudgeTime}>Just now</Text>
+      </View>
+
+      <Text style={styles.nudgeBody}>{nudgeText}</Text>
+    </View>
+  );
+}
+
+function HealthMetricsGrid({ healthData }: HealthMetricsGridProps) {
+  return (
+    <View style={styles.statsGrid}>
+      <View style={styles.statCard}>
+        <Ionicons name="flame-outline" size={18} color={colors.accentGold} />
+        <Text style={styles.statValue}>
+          {healthData !== null ? healthData.caloriesKcal.toLocaleString() : '--'}
+        </Text>
+        <Text style={styles.statLabel}>Calories (kcal)</Text>
+      </View>
+
+      <View style={styles.statCard}>
+        <Ionicons name="map-outline" size={18} color={colors.accentCyan} />
+        <Text style={styles.statValue}>
+          {healthData !== null ? `${healthData.distanceKm} km` : '--'}
+        </Text>
+        <Text style={styles.statLabel}>Distance</Text>
+      </View>
+
+      <View style={styles.statCard}>
+        <Ionicons name="trending-up-outline" size={18} color={colors.accentPurple} />
+        <Text style={styles.statValue}>
+          {healthData !== null ? `${healthData.floorsClimbed} f` : '--'}
+        </Text>
+        <Text style={styles.statLabel}>Floors</Text>
+      </View>
+    </View>
+  );
+}
+
+function ErrorAlert({ error }: ErrorAlertProps) {
+  if (!error) return null;
+  return (
+    <View style={styles.errorCard}>
+      <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
+      <Text style={styles.errorText}>{error}</Text>
+    </View>
+  );
+}
+
+function ChallengeDetailModal({ visible, onClose }: ChallengeDetailModalProps) {
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>The Pulse Relay Details</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close-circle" size={24} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.modalBodyText}>
+            Team Kinetic is currently competing in the Biometric AI Performance Sprint. Sync steps before midnight to maximize your team ranking!
+          </Text>
+
+          <TouchableOpacity style={styles.modalCloseBtn} onPress={onClose}>
+            <Text style={styles.modalCloseBtnText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function AiSprintModal({ visible, latestAiChallenge, onClose }: AiSprintModalProps) {
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContent, { borderColor: '#A3E635', borderWidth: 1.5 }]}>
+          <View style={styles.modalHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="sparkles" size={18} color="#A3E635" />
+              <Text style={[styles.modalTitle, { color: '#A3E635' }]}>New Gemini AI Sprint</Text>
+            </View>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close-circle" size={24} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFFFFF', marginBottom: 8 }}>
+            {latestAiChallenge?.title || 'AI Sprint Created'}
+          </Text>
+
+          <Text style={[styles.modalBodyText, { color: '#D1D5DB', fontSize: 14, lineHeight: 20 }]}>
+            {latestAiChallenge?.description || 'Your team has been assigned a new Gemini AI fitness challenge!'}
+          </Text>
+
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#111827', padding: 12, borderRadius: 12, marginVertical: 14 }}>
+            <Text style={{ color: '#9CA3AF', fontSize: 13, fontWeight: '600' }}>
+              Target: {latestAiChallenge?.target_value?.toLocaleString()} {latestAiChallenge?.target_unit}
+            </Text>
+            <Text style={{ color: '#A3E635', fontSize: 13, fontWeight: '800' }}>
+              +{latestAiChallenge?.points} PTS
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.modalCloseBtn, { backgroundColor: '#A3E635' }]}
+            onPress={onClose}
+          >
+            <Text style={[styles.modalCloseBtnText, { color: '#000000' }]}>Let's Sprint! 🚀</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Main Component
+// -----------------------------------------------------------------------------
 
 export default function ChallengeScreen() {
+  // Intro processing animation state (shows for 4s on initial mount)
+  const [showIntroAnimation, setShowIntroAnimation] = useState<boolean>(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowIntroAnimation(false);
+    }, 4000); // Doubled duration from 2s to 4s
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // State
   const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [generatingAi, setGeneratingAi] = useState<boolean>(false);
@@ -30,9 +491,36 @@ export default function ChallengeScreen() {
   const [activeChallenge, setActiveChallenge] = useState<Challenge | null>(null);
   const [latestAiChallenge, setLatestAiChallenge] = useState<Challenge | null>(null);
 
-  const TEAM_GOAL_STEPS = activeChallenge?.target_value || 24000;
-  const TEAMMATES_STEPS_BASELINE = 6280;
+  // Fitness background image selection (stable per challenge)
+  const [heroBgImage, setHeroBgImage] = useState<any>(() => {
+    const initialIndex = Math.floor(Math.random() * FITNESS_IMAGES.length);
+    return FITNESS_IMAGES[initialIndex];
+  });
 
+  const challengeKey = activeChallenge?.id ?? activeChallenge?.title;
+
+  useEffect(() => {
+    if (challengeKey) {
+      const randomIndex = Math.floor(Math.random() * FITNESS_IMAGES.length);
+      setHeroBgImage(FITNESS_IMAGES[randomIndex]);
+    }
+  }, [challengeKey]);
+
+  // Constants & Calculations
+  const TEAMMATES_STEPS_BASELINE = 6280;
+  const TEAM_GOAL_STEPS = activeChallenge?.target_value || 24000;
+  const userSteps = healthData?.steps ?? 0;
+  const teamTotalSteps = userSteps + TEAMMATES_STEPS_BASELINE;
+  const teamProgressPercent = TEAM_GOAL_STEPS > 0 ? Math.min(Math.round((teamTotalSteps / TEAM_GOAL_STEPS) * 100), 100) : 0;
+  const remainingSteps = Math.max(0, TEAM_GOAL_STEPS - teamTotalSteps);
+
+  const platformLabel = USE_MOCK_HEALTH
+    ? 'Mock Mode'
+    : Platform.OS === 'ios'
+      ? 'Apple HealthKit'
+      : 'Android Health Connect';
+
+  // Data Fetching & Sync Handlers
   const loadChallenges = useCallback(async () => {
     try {
       const res = await fetchChallenges(1, 'ACTIVE');
@@ -43,25 +531,6 @@ export default function ChallengeScreen() {
       console.warn('Failed to load challenges:', e);
     }
   }, []);
-
-  const handleGenerateAiSprint = async () => {
-    setGeneratingAi(true);
-    try {
-      const res = await generateAiChallenge({ team_id: 1, preferred_unit: 'steps' });
-      setGeneratingAi(false);
-      if (res.success && res.data) {
-        setLatestAiChallenge(res.data);
-        setActiveChallenge(res.data);
-        setAiModalVisible(true);
-        loadChallenges();
-      } else {
-        setError(res.message || 'Failed to generate AI sprint.');
-      }
-    } catch (err: any) {
-      setGeneratingAi(false);
-      setError(err?.message || 'Error generating AI sprint.');
-    }
-  };
 
   const syncHealthData = useCallback(async () => {
     setLoading(true);
@@ -83,296 +552,64 @@ export default function ChallengeScreen() {
     syncHealthData();
   }, [syncHealthData]);
 
-  const userSteps = healthData?.steps ?? 0;
-  const teamTotalSteps = userSteps + TEAMMATES_STEPS_BASELINE;
-  const teamProgressPercent = TEAM_GOAL_STEPS > 0 ? Math.min(Math.round((teamTotalSteps / TEAM_GOAL_STEPS) * 100), 100) : 0;
-  const remainingSteps = Math.max(0, TEAM_GOAL_STEPS - teamTotalSteps);
-
-  const platformLabel = USE_MOCK_HEALTH
-    ? 'Mock Mode'
-    : Platform.OS === 'ios'
-    ? 'Apple HealthKit'
-    : 'Android Health Connect';
-
-  if (loading && !healthData && !activeChallenge) {
-    return (
-      <SafeAreaView style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }]}>
-        <StatusBar style="light" />
-        <ActivityIndicator size="large" color={colors.accentCyan} />
-        <Text style={{ color: colors.textSecondary, marginTop: 16, fontSize: 14, fontWeight: '600' }}>
-          Syncing Live Challenge & Health Data...
-        </Text>
-      </SafeAreaView>
-    );
+  // 1. Native Intro AI Processing Animation (shows for 2s on mount)
+  if (showIntroAnimation) {
+    return <NativeAIProcessingIntro />;
   }
 
+  // 2. Loading View (if data is still fetching after intro animation)
+  if (loading && !healthData && !activeChallenge) {
+    return <LoadingScreen message="Syncing Live Challenge & Health Data..." />;
+  }
 
   return (
-
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         {/* Top Header Bar */}
-        <View style={styles.topHeaderBar}>
-          <Text style={styles.topHeaderTitle}>Challenges</Text>
-          <Image
-            source={require('../../assets/OneLifeInAppLogo.png')}
-            style={styles.topRightLogo}
-            resizeMode="contain"
-          />
-        </View>
+        <HeaderBar title="Challenges" />
 
+        {/* 1. Biometric AI Hero Card */}
+        <HeroCard
+          activeChallenge={activeChallenge}
+          platformLabel={platformLabel}
+          onViewDetails={() => setModalVisible(true)}
+          backgroundImage={heroBgImage}
+        />
 
-        {/* 1. BIOMETRIC AI HERO CARD ("The Pulse Relay") */}
-        <View style={styles.heroCard}>
+        {/* 2. Team Kinetic Section */}
+        <TeamCard
+          userSteps={userSteps}
+          teamTotalSteps={teamTotalSteps}
+          teamGoalSteps={TEAM_GOAL_STEPS}
+          teamProgressPercent={teamProgressPercent}
+          remainingSteps={remainingSteps}
+          loading={loading}
+          onSync={syncHealthData}
+        />
 
-          {/* Top Row: AI GENERATED LIVE (Left) & HR: 168 SPM (Right) */}
-          <View style={styles.heroTopRow}>
-            <View style={styles.aiLiveBadge}>
-              <View style={styles.liveDot} />
-              <Ionicons name="sparkles" size={11} color={colors.accentGreen} />
-              <Text style={styles.aiLiveText}>AI GENERATED LIVE</Text>
-            </View>
+        {/* 3. AI Smart Nudge Card */}
+        <SmartNudgeCard nudgeText='"Nova: A 9-min walk each closes the gap. Try a 3:30 PM stroll."' />
 
-            <View style={styles.hrBadge}>
-              <Ionicons name="heart" size={13} color="#EF4444" />
-              <Text style={styles.hrBadgeText}>HR: 168 SPM</Text>
-            </View>
-          </View>
-
-          {/* Title & Description */}
-          <View style={styles.heroTextSection}>
-            <Text style={styles.heroEngineTag}>BIOMETRIC PERFORMANCE ENGINE</Text>
-            <Text style={styles.heroTitle}>{activeChallenge?.title || 'The Pulse Relay'}</Text>
-            <Text style={styles.heroDescription}>
-              {activeChallenge?.description || 'Build a shared 24,000 step surge before time runs out.'}
-            </Text>
-          </View>
-
-          {/* Countdown & Provider Row */}
-          <View style={styles.heroTimerRow}>
-            <View style={styles.timerPill}>
-              <Ionicons name="time-outline" size={13} color={colors.accentGreen} />
-              <Text style={styles.timerText}>06:42:18 remaining</Text>
-            </View>
-
-            <View style={styles.providerPill}>
-              <Ionicons
-                name={Platform.OS === 'ios' ? 'heart' : 'fitness'}
-                size={11}
-                color={colors.accentGreen}
-              />
-              <Text style={styles.providerText}>{platformLabel}</Text>
-            </View>
-          </View>
-
-          {/* Action Row: Finish Reward & View Detail Modal */}
-          <View style={styles.heroActionRow}>
-            <View style={styles.rewardPill}>
-              <Ionicons name="trophy" size={14} color={colors.accentGold} />
-              <Text style={styles.rewardPillLabel}>Finish reward:</Text>
-              <Text style={styles.rewardPillPoints}>
-                +{activeChallenge?.points || 120} pts
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              style={styles.viewDetailBtn}
-              onPress={() => setModalVisible(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.viewDetailBtnText}>View</Text>
-              <Ionicons name="chevron-forward" size={14} color={colors.accentGreen} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* 2. TEAM KINETIC SECTION */}
-        <View style={styles.teamCard}>
-          <View style={styles.teamHeader}>
-            <View style={{ flexShrink: 1 }}>
-              <Text style={styles.teamSubtitle}>PARTICIPATING TEAM</Text>
-              <Text style={styles.teamTitle}>Team Kinetic</Text>
-            </View>
-
-            {/* Member Avatars Stack */}
-            <View style={styles.avatarStack}>
-              <View style={[styles.avatarCircle, { backgroundColor: colors.accentGreen, zIndex: 4 }]}>
-                <Text style={styles.avatarText}>M</Text>
-              </View>
-              <View style={[styles.avatarCircle, { backgroundColor: '#F59E0B', zIndex: 3, marginLeft: -10 }]}>
-                <Text style={styles.avatarText}>N</Text>
-              </View>
-              <View style={[styles.avatarCircle, { backgroundColor: '#3B82F6', zIndex: 2, marginLeft: -10 }]}>
-                <Text style={styles.avatarText}>J</Text>
-              </View>
-              <View style={[styles.avatarCircle, { backgroundColor: '#8B5CF6', zIndex: 1, marginLeft: -10 }]}>
-                <Text style={styles.avatarText}>E</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Team Steps Display */}
-          <View style={styles.teamStepsRow}>
-            <Text style={styles.teamStepsBig}>{teamTotalSteps.toLocaleString()}</Text>
-            <Text style={styles.teamStepsGoal}> / {TEAM_GOAL_STEPS.toLocaleString()} steps</Text>
-          </View>
-
-          {/* Progress Bar */}
-          <View style={styles.progressSection}>
-            <View style={styles.progressLabels}>
-              <Text style={styles.progressPercentText}>{teamProgressPercent}% completed</Text>
-              <Text style={styles.remainingStepsText}>
-                {remainingSteps.toLocaleString()} steps to goal
-              </Text>
-            </View>
-            <View style={styles.progressBarTrack}>
-              <View style={[styles.progressBarFill, { width: `${teamProgressPercent}%` }]} />
-            </View>
-          </View>
-
-          {/* Individual Sync Button */}
-          <TouchableOpacity
-            style={styles.syncButton}
-            onPress={syncHealthData}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            {loading ? (
-              <ActivityIndicator color={colors.textDark} />
-            ) : (
-              <View style={styles.syncButtonContent}>
-                <Ionicons name="refresh" size={16} color={colors.textDark} style={styles.syncIcon} />
-                <Text style={styles.syncButtonText}>
-                  Sync Your Steps ({userSteps.toLocaleString()})
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* 3. AI SMART NUDGE CARD */}
-        <View style={styles.nudgeCard}>
-          <View style={styles.nudgeHeader}>
-            <View style={styles.nudgeBadge}>
-              <Ionicons name="sparkles" size={13} color={colors.accentPurple} />
-              <Text style={styles.nudgeBadgeText}>NOVA AI SMART NUDGE</Text>
-            </View>
-            <Text style={styles.nudgeTime}>Just now</Text>
-          </View>
-
-          <Text style={styles.nudgeBody}>
-            "Nova: A 9-min walk each closes the gap. Try a 3:30 PM stroll."
-          </Text>
-        </View>
-
-        {/* 4. HEALTH METRICS GRID */}
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Ionicons name="flame-outline" size={18} color={colors.accentGold} />
-            <Text style={styles.statValue}>
-              {healthData !== null ? healthData.caloriesKcal.toLocaleString() : '--'}
-            </Text>
-            <Text style={styles.statLabel}>Calories (kcal)</Text>
-          </View>
-
-          <View style={styles.statCard}>
-            <Ionicons name="map-outline" size={18} color={colors.accentCyan} />
-            <Text style={styles.statValue}>
-              {healthData !== null ? `${healthData.distanceKm} km` : '--'}
-            </Text>
-            <Text style={styles.statLabel}>Distance</Text>
-          </View>
-
-          <View style={styles.statCard}>
-            <Ionicons name="trending-up-outline" size={18} color={colors.accentPurple} />
-            <Text style={styles.statValue}>
-              {healthData !== null ? `${healthData.floorsClimbed} f` : '--'}
-            </Text>
-            <Text style={styles.statLabel}>Floors</Text>
-          </View>
-        </View>
+        {/* 4. Health Metrics Grid */}
+        <HealthMetricsGrid healthData={healthData} />
 
         {/* Error Alert */}
-        {error ? (
-          <View style={styles.errorCard}>
-            <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
+        <ErrorAlert error={error} />
       </ScrollView>
 
-      {/* DETAIL MODAL */}
-      <Modal
+      {/* Challenge Details Modal */}
+      <ChallengeDetailModal
         visible={modalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>The Pulse Relay Details</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close-circle" size={24} color={colors.textMuted} />
-              </TouchableOpacity>
-            </View>
+        onClose={() => setModalVisible(false)}
+      />
 
-            <Text style={styles.modalBodyText}>
-              Team Kinetic is currently competing in the Biometric AI Performance Sprint. Sync steps before midnight to maximize your team ranking!
-            </Text>
-
-            <TouchableOpacity
-              style={styles.modalCloseBtn}
-              onPress={() => setModalVisible(false)}
-            >
-              <Text style={styles.modalCloseBtnText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* GEMINI AI GENERATED SPRINT MODAL */}
-      <Modal
+      {/* Gemini AI Sprint Modal */}
+      <AiSprintModal
         visible={aiModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setAiModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { borderColor: '#A3E635', borderWidth: 1.5 }]}>
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="sparkles" size={18} color="#A3E635" />
-                <Text style={[styles.modalTitle, { color: '#A3E635' }]}>New Gemini AI Sprint</Text>
-              </View>
-              <TouchableOpacity onPress={() => setAiModalVisible(false)}>
-                <Ionicons name="close-circle" size={24} color={colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFFFFF', marginBottom: 8 }}>
-              {latestAiChallenge?.title || 'AI Sprint Created'}
-            </Text>
-
-            <Text style={[styles.modalBodyText, { color: '#D1D5DB', fontSize: 14, lineHeight: 20 }]}>
-              {latestAiChallenge?.description || 'Your team has been assigned a new Gemini AI fitness challenge!'}
-            </Text>
-
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#111827', padding: 12, borderRadius: 12, marginVertical: 14 }}>
-              <Text style={{ color: '#9CA3AF', fontSize: 13, fontWeight: '600' }}>Target: {latestAiChallenge?.target_value?.toLocaleString()} {latestAiChallenge?.target_unit}</Text>
-              <Text style={{ color: '#A3E635', fontSize: 13, fontWeight: '800' }}>+{latestAiChallenge?.points} PTS</Text>
-            </View>
-
-            <TouchableOpacity
-              style={[styles.modalCloseBtn, { backgroundColor: '#A3E635' }]}
-              onPress={() => setAiModalVisible(false)}
-            >
-              <Text style={[styles.modalCloseBtnText, { color: '#000000' }]}>Let's Sprint! 🚀</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+        latestAiChallenge={latestAiChallenge}
+        onClose={() => setAiModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -407,12 +644,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
   },
   heroCard: {
-    backgroundColor: '#0C111C',
     borderRadius: 22,
-    padding: 18,
     borderWidth: 1.5,
     borderColor: 'rgba(16, 185, 129, 0.35)',
     marginBottom: 16,
+    overflow: 'hidden',
+  },
+  heroCardImage: {
+    borderRadius: 20,
+  },
+  heroCardOverlay: {
+    backgroundColor: 'rgba(12, 17, 28, 0.78)',
+    padding: 18,
   },
   heroTopRow: {
     flexDirection: 'row',
@@ -804,4 +1047,47 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  aiIntroContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000000',
+  },
+  aiIntroContent: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  aiOrbContainer: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderWidth: 2,
+    borderColor: colors.accentGreen,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  aiOrbGlow: {
+    position: 'absolute',
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  aiIntroTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 2,
+    marginBottom: 8,
+  },
+  aiIntroSubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
 });
+
