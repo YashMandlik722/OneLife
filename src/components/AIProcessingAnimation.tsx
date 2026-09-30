@@ -43,10 +43,10 @@ export type AIProcessingAnimationProps = {
 
 type Layer = {
   opacity: number;
-  tx: number[];
-  ty: number[];
-  rot: number[];
-  inner: [number, number];
+  tx: (number | string)[];
+  ty: (number | string)[];
+  rot: (number | string)[];
+  inner: [number | string, number | string];
   d: string;
 };
 
@@ -942,12 +942,12 @@ export default function AIProcessingAnimation({
           {LAYERS.map((layer, index) => {
             const translateX = progress.interpolate({
               inputRange: KEY_TIMES,
-              outputRange: layer.tx,
+              outputRange: layer.tx as any,
             });
 
             const translateY = progress.interpolate({
               inputRange: KEY_TIMES,
-              outputRange: layer.ty,
+              outputRange: layer.ty as any,
             });
 
             const rotation = progress.interpolate({
@@ -973,8 +973,8 @@ export default function AIProcessingAnimation({
                   { translateX },
                   { translateY },
                   { rotate: rotation },
-                  { translateX: layer.inner[0] },
-                  { translateY: layer.inner[1] },
+                  { translateX: Number(layer.inner[0]) },
+                  { translateY: Number(layer.inner[1]) },
                 ] as any}
               >
                 <Path

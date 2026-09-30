@@ -1,202 +1,37 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
+  Image,
+  ImageBackground,
+  RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   View,
-  TouchableOpacity,
-  ActivityIndicator,
-  ScrollView,
-  Platform,
-  Modal,
-  Image,
-  ImageBackground,
-  Animated,
-  Easing,
-  RefreshControl,
 } from 'react-native';
+import type { ImageSourcePropType } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { getCache, setCache } from '../utils/cache';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
-
-import { getHealthProvider, USE_MOCK_HEALTH, HealthData } from '../health';
+import AIProcessingAnimation from '../components/AIProcessingAnimation';
+import { getHealthProvider, HealthData } from '../health';
 import { fetchChallenges } from '../api/challenges';
-import { Challenge } from '../types/challenge';
+import {
+  Challenge,
+  ChallengeTeam,
+  ChallengeTarget,
+  DailyChallengeResponse,
+} from '../types/challenge';
+
 
 // -----------------------------------------------------------------------------
-// Temporary Mock Challenges (Conforming to Real Backend Schema)
+// Fitness background images
 // -----------------------------------------------------------------------------
 
-const MOCK_CHALLENGES: Challenge[] = [
-  {
-    id: 'mock-1',
-    name: 'Service Floor Summit Challenge',
-    description: 'Skip the elevator after lunch at the Service Floor canteen and take the stairs up to DigiValet on Floors 6 and 7. Rally your crew to collectively log 35,000 steps and climb 35 floors before 22:00 today. Hit both milestones as a squad across your workday to secure the 500-point win!',
-    award_points: 500,
-    activity_data: {
-      scope: 'group_combined',
-      start_time: '08:00 today',
-      deadline: '22:00 today',
-      duration_hours: 14,
-      team_size: 5,
-      teams: [
-        { id: 't1', name: 'Titans' },
-        { id: 't2', name: 'Minions' },
-        { id: 't3', name: 'Kinetic' },
-      ],
-      targets: [
-        {
-          metric: 'steps',
-          value: 35000,
-          unit: 'steps',
-          applies_to: 'team_total',
-        },
-        {
-          metric: 'floors_climbed',
-          value: 35,
-          unit: 'floors',
-          applies_to: 'team_total',
-        },
-      ],
-      building_theme: 'Climbing from the Service Floor dining area up to DigiValet offices on Floor 6 and 7.',
-      difficulty_rating: 'moderate',
-      completion_rule: 'The team wins 500 points when all 5 members collectively record at least 35,000 steps and 35 floors climbed by 22:00 today.',
-    },
-    progress_records: [
-      // Titans (team_id: 't1')
-      {
-        id: 'pr-1',
-        challenge_id: 'mock-1',
-        team_id: 't1',
-        user_id: 'u-1',
-        current_value: 7850,
-        completed: false,
-        completed_at: null,
-        user: { id: 'u-1', name: 'Marcus Vance (You)', email: 'marcus@example.com' },
-      },
-      {
-        id: 'pr-2',
-        challenge_id: 'mock-1',
-        team_id: 't1',
-        user_id: 'u-2',
-        current_value: 6800,
-        completed: false,
-        completed_at: null,
-        user: { id: 'u-2', name: 'Nina Patel', email: 'nina@example.com' },
-      },
-      {
-        id: 'pr-3',
-        challenge_id: 'mock-1',
-        team_id: 't1',
-        user_id: 'u-3',
-        current_value: 7100,
-        completed: false,
-        completed_at: null,
-        user: { id: 'u-3', name: 'Jon Okafor', email: 'jon@example.com' },
-      },
-      {
-        id: 'pr-4',
-        challenge_id: 'mock-1',
-        team_id: 't1',
-        user_id: 'u-4',
-        current_value: 6700,
-        completed: false,
-        completed_at: null,
-        user: { id: 'u-4', name: 'Elena Cruz', email: 'elena@example.com' },
-      },
-
-      // Minions (team_id: 't2')
-      {
-        id: 'pr-5',
-        challenge_id: 'mock-1',
-        team_id: 't2',
-        user_id: 'u-5',
-        current_value: 6200,
-        completed: false,
-        completed_at: null,
-        user: { id: 'u-5', name: 'Alex Wong', email: 'alex@example.com' },
-      },
-      {
-        id: 'pr-6',
-        challenge_id: 'mock-1',
-        team_id: 't2',
-        user_id: 'u-6',
-        current_value: 5900,
-        completed: false,
-        completed_at: null,
-        user: { id: 'u-6', name: 'Sarah Chen', email: 'sarah@example.com' },
-      },
-      {
-        id: 'pr-7',
-        challenge_id: 'mock-1',
-        team_id: 't2',
-        user_id: 'u-7',
-        current_value: 6400,
-        completed: false,
-        completed_at: null,
-        user: { id: 'u-7', name: 'David Kim', email: 'david@example.com' },
-      },
-      {
-        id: 'pr-8',
-        challenge_id: 'mock-1',
-        team_id: 't2',
-        user_id: 'u-8',
-        current_value: 6320,
-        completed: false,
-        completed_at: null,
-        user: { id: 'u-8', name: 'Lisa Ray', email: 'lisa@example.com' },
-      },
-
-      // Kinetic (team_id: 't3')
-      {
-        id: 'pr-9',
-        challenge_id: 'mock-1',
-        team_id: 't3',
-        user_id: 'u-9',
-        current_value: 8100,
-        completed: false,
-        completed_at: null,
-        user: { id: 'u-9', name: 'Tom Hardy', email: 'tom@example.com' },
-      },
-      {
-        id: 'pr-10',
-        challenge_id: 'mock-1',
-        team_id: 't3',
-        user_id: 'u-10',
-        current_value: 7900,
-        completed: false,
-        completed_at: null,
-        user: { id: 'u-10', name: 'Amy Adams', email: 'amy@example.com' },
-      },
-      {
-        id: 'pr-11',
-        challenge_id: 'mock-1',
-        team_id: 't3',
-        user_id: 'u-11',
-        current_value: 7600,
-        completed: false,
-        completed_at: null,
-        user: { id: 'u-11', name: 'Chris Evans', email: 'chris@example.com' },
-      },
-      {
-        id: 'pr-12',
-        challenge_id: 'mock-1',
-        team_id: 't3',
-        user_id: 'u-12',
-        current_value: 7600,
-        completed: false,
-        completed_at: null,
-        user: { id: 'u-12', name: 'Mia Thermopolis', email: 'mia@example.com' },
-      },
-    ],
-  },
-];
-
-// -----------------------------------------------------------------------------
-// Fitness Background Images
-// -----------------------------------------------------------------------------
-
-const FITNESS_IMAGES = [
+const FITNESS_IMAGES: ImageSourcePropType[] = [
   require('../../assets/fitness_images/exercise1.jpg'),
   require('../../assets/fitness_images/exercise2.jpg'),
   require('../../assets/fitness_images/exercise3.jpg'),
@@ -208,167 +43,11 @@ const FITNESS_IMAGES = [
 ];
 
 // -----------------------------------------------------------------------------
-// Component Props Interfaces
+// Presentational components
 // -----------------------------------------------------------------------------
 
 interface HeaderBarProps {
   title: string;
-}
-
-interface HeroCardProps {
-  activeChallenge: Challenge | null;
-  backgroundImage: any;
-}
-
-interface ChallengeDetailsCardProps {
-  activeChallenge: Challenge | null;
-}
-
-interface TeamCompetitionSectionProps {
-  activeChallenge: Challenge | null;
-  userSteps: number;
-}
-
-function TeamCompetitionSection({ activeChallenge, userSteps }: TeamCompetitionSectionProps) {
-  const primaryTarget = activeChallenge?.activity_data?.targets?.[0];
-  const teamGoalSteps = primaryTarget?.value || 35000;
-  const targetUnit = primaryTarget?.unit || 'steps';
-
-  const teams = activeChallenge?.activity_data?.teams || [{ id: 't1', name: 'Kinetic' }];
-  const allRecords = activeChallenge?.progress_records || [];
-
-  const memberColors = ['#10B981', '#F59E0B', '#3B82F6', '#8B5CF6', '#EC4899'];
-
-  return (
-    <View style={styles.competitionContainer}>
-      <Text style={styles.competitionSectionHeader}>TEAM COMPETITION</Text>
-
-      {teams.map((team, teamIdx) => {
-        // Filter progress records for this team
-        const teamRecords = allRecords.filter(
-          (rec) => rec.team_id !== undefined ? String(rec.team_id) === String(team.id) : teamIdx === 0
-        );
-
-        // Map team member progress (override user_id 'u-1' with live userSteps)
-        const members = teamRecords.map((rec, idx) => {
-          const isUser = rec.user_id === 'u-1';
-          const steps = isUser && userSteps > 0 ? userSteps : rec.current_value;
-          return {
-            id: String(rec.id),
-            name: rec.user?.name || `Member ${idx + 1}`,
-            initial: (rec.user?.name || 'M').charAt(0).toUpperCase(),
-            steps,
-            color: memberColors[idx % memberColors.length],
-          };
-        });
-
-        const teamTotalSteps = members.reduce((sum, m) => sum + m.steps, 0);
-        const teamProgressPercent = teamGoalSteps > 0
-          ? Math.min(Math.round((teamTotalSteps / teamGoalSteps) * 100), 100)
-          : 0;
-        const remainingSteps = Math.max(0, teamGoalSteps - teamTotalSteps);
-
-        return (
-          <View key={String(team.id)} style={styles.teamCard}>
-            <View style={styles.teamHeader}>
-              <View style={{ flexShrink: 1 }}>
-                <Text style={styles.teamSubtitle}>COMPETING TEAM #{teamIdx + 1}</Text>
-                <Text style={styles.teamTitle}>{team.name}</Text>
-              </View>
-
-              {/* Member Avatars Stack */}
-              <View style={styles.avatarStack}>
-                {members.slice(0, 4).map((member, idx) => (
-                  <View
-                    key={member.id}
-                    style={[
-                      styles.avatarCircle,
-                      { backgroundColor: member.color, zIndex: 10 - idx, marginLeft: idx === 0 ? 0 : -10 },
-                    ]}
-                  >
-                    <Text style={styles.avatarText}>{member.initial}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-
-            {/* Team Target Display */}
-            <View style={styles.teamStepsRow}>
-              <Text style={styles.teamStepsBig}>{teamTotalSteps.toLocaleString()}</Text>
-              <Text style={styles.teamStepsGoal}> / {teamGoalSteps.toLocaleString()} {targetUnit}</Text>
-            </View>
-
-            {/* Progress Bar */}
-            <View style={styles.progressSection}>
-              <View style={styles.progressLabels}>
-                <Text style={styles.progressPercentText}>{teamProgressPercent}% completed</Text>
-                <Text style={styles.remainingStepsText}>
-                  {remainingSteps.toLocaleString()} {targetUnit} to goal
-                </Text>
-              </View>
-              <View style={styles.progressBarTrack}>
-                <View style={[styles.progressBarFill, { width: `${teamProgressPercent}%` }]} />
-              </View>
-            </View>
-
-            {/* Team Members List */}
-            <View style={styles.teamMembersContainer}>
-              <Text style={styles.teamMembersHeader}>ROSTER & CONTRIBUTIONS</Text>
-              {members.map((member) => (
-                <View key={member.id} style={styles.memberRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                    <View style={[styles.memberRowAvatar, { backgroundColor: member.color }]}>
-                      <Text style={styles.avatarText}>{member.initial}</Text>
-                    </View>
-                    <Text style={styles.memberName} numberOfLines={1}>{member.name}</Text>
-                  </View>
-                  <Text style={styles.memberSteps}>{member.steps.toLocaleString()} {targetUnit}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-interface SmartNudgeCardProps {
-  nudgeText: string;
-}
-
-interface HealthMetricsGridProps {
-  healthData: HealthData | null;
-}
-
-interface ErrorAlertProps {
-  error: string | null;
-}
-
-interface LoadingScreenProps {
-  message?: string;
-}
-
-interface AiSprintModalProps {
-  visible: boolean;
-  latestAiChallenge: Challenge | null;
-  onClose: () => void;
-}
-
-// -----------------------------------------------------------------------------
-// Local Presentational Components
-// -----------------------------------------------------------------------------
-
-function LoadingScreen({ message = 'Syncing Live Challenge & Health Data...' }: LoadingScreenProps) {
-  return (
-    <SafeAreaView style={[styles.safeArea, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }]}>
-      <StatusBar style="light" />
-      <ActivityIndicator size="large" color={colors.accentCyan} />
-      <Text style={{ color: colors.textSecondary, marginTop: 16, fontSize: 14, fontWeight: '600' }}>
-        {message}
-      </Text>
-    </SafeAreaView>
-  );
 }
 
 function HeaderBar({ title }: HeaderBarProps) {
@@ -384,10 +63,12 @@ function HeaderBar({ title }: HeaderBarProps) {
   );
 }
 
-function HeroCard({ activeChallenge, backgroundImage }: HeroCardProps) {
-  const name = activeChallenge?.name || 'The Pulse Relay';
-  const awardPoints = activeChallenge?.award_points ?? 120;
+interface HeroCardProps {
+  challenge: Challenge;
+  backgroundImage: ImageSourcePropType;
+}
 
+function HeroCard({ challenge, backgroundImage }: HeroCardProps) {
   return (
     <ImageBackground
       source={backgroundImage}
@@ -396,19 +77,15 @@ function HeroCard({ activeChallenge, backgroundImage }: HeroCardProps) {
       resizeMode="cover"
     >
       <View style={styles.heroCardOverlay}>
-        {/* Name & Description */}
         <View style={styles.heroTextSection}>
-          <Text style={styles.heroTitle}>{name}</Text>
+          <Text style={styles.heroTitle}>{challenge.name}</Text>
         </View>
 
-        {/* Action Row: Reward Points */}
         <View style={styles.heroActionRow}>
           <View style={styles.rewardPill}>
             <Ionicons name="trophy" size={14} color={colors.accentGold} />
             <Text style={styles.rewardPillLabel}>Finish reward:</Text>
-            <Text style={styles.rewardPillPoints}>
-              +{awardPoints} pts
-            </Text>
+            <Text style={styles.rewardPillPoints}>+{challenge.award_points} pts</Text>
           </View>
         </View>
       </View>
@@ -416,16 +93,28 @@ function HeroCard({ activeChallenge, backgroundImage }: HeroCardProps) {
   );
 }
 
-function ChallengeDetailsCard({ activeChallenge }: ChallengeDetailsCardProps) {
-  const challenge = activeChallenge || MOCK_CHALLENGES[0];
-  const description = challenge.description;
-  const awardPoints = challenge.award_points;
-  const difficulty = challenge.activity_data?.difficulty_rating || 'moderate';
-  const duration = challenge.activity_data?.duration_hours ? `${challenge.activity_data.duration_hours} hrs` : '24 hrs';
+interface ChallengeDetailsCardProps {
+  challenge: Challenge;
+}
 
-  const targets = challenge.activity_data?.targets || [];
-  const primaryTarget = targets[0];
-  const secondaryTarget = targets.length > 1 ? targets[1] : null;
+function getTargetByMetric(targets: ChallengeTarget[], metric: string): ChallengeTarget | undefined {
+  return targets.find((target) => target.metric.toLowerCase() === metric);
+}
+
+function ChallengeDetailsCard({ challenge }: ChallengeDetailsCardProps) {
+  const { activity_data: activity } = challenge;
+  const targets = activity.targets ?? [];
+
+  const stepsTarget = getTargetByMetric(targets, 'steps');
+  const floorsTarget = getTargetByMetric(targets, 'floors_climbed');
+
+  const primaryTarget = stepsTarget ?? targets[0];
+  const secondaryTarget =
+    primaryTarget === stepsTarget
+      ? floorsTarget
+      : targets.find((target) => target !== primaryTarget);
+
+  const difficulty = activity.difficulty_rating?.trim() || 'Not specified';
 
   return (
     <View style={styles.detailsCard}>
@@ -433,6 +122,7 @@ function ChallengeDetailsCard({ activeChallenge }: ChallengeDetailsCardProps) {
         <View style={{ flex: 1, paddingRight: 8 }}>
           <Text style={styles.detailsSubtitle}>CHALLENGE DETAILS</Text>
         </View>
+
         <View style={styles.difficultyBadge}>
           <Ionicons name="flash" size={12} color={colors.accentGold} />
           <Text style={styles.difficultyText}>
@@ -441,31 +131,34 @@ function ChallengeDetailsCard({ activeChallenge }: ChallengeDetailsCardProps) {
         </View>
       </View>
 
-      <Text style={styles.detailsDescription}>{description}</Text>
+      <Text style={styles.detailsDescription}>{challenge.description}</Text>
 
       <View style={styles.detailsGrid}>
         <View style={styles.detailsGridItem}>
           <Ionicons name="flag" size={16} color={colors.accentGreen} />
           <Text style={styles.detailsItemLabel}>Primary Target</Text>
           <Text style={styles.detailsItemValue}>
-            {primaryTarget ? `${primaryTarget.value.toLocaleString()} ${primaryTarget.unit}` : '--'}
+            {primaryTarget
+              ? `${primaryTarget.value.toLocaleString()} ${primaryTarget.unit}`
+              : '--'}
           </Text>
         </View>
 
         <View style={styles.detailsGridItem}>
           <Ionicons name="trophy" size={16} color={colors.accentGold} />
           <Text style={styles.detailsItemLabel}>Reward Points</Text>
-          <Text style={styles.detailsItemValue}>+{awardPoints} PTS</Text>
+          <Text style={styles.detailsItemValue}>+{challenge.award_points} PTS</Text>
         </View>
 
         <View style={styles.detailsGridItem}>
           <Ionicons name="time" size={16} color={colors.accentCyan} />
           <Text style={styles.detailsItemLabel}>Duration</Text>
-          <Text style={styles.detailsItemValue}>{duration}</Text>
+          <Text style={styles.detailsItemValue}>
+            {activity.duration_hours > 0 ? `${activity.duration_hours} hrs` : '--'}
+          </Text>
         </View>
       </View>
 
-      {/* Secondary Target Badge (e.g. 35 floors) */}
       {secondaryTarget && (
         <View style={styles.secondaryTargetBox}>
           <Ionicons name="add-circle-outline" size={14} color={colors.accentCyan} />
@@ -479,22 +172,142 @@ function ChallengeDetailsCard({ activeChallenge }: ChallengeDetailsCardProps) {
   );
 }
 
+interface TeamCompetitionSectionProps {
+  teams: ChallengeTeam[];
+  targets: ChallengeTarget[];
+}
 
+function TeamCompetitionSection({ teams, targets }: TeamCompetitionSectionProps) {
+  const stepsTarget = getTargetByMetric(targets, 'steps');
+  const floorsTarget = getTargetByMetric(targets, 'floors_climbed');
 
-function SmartNudgeCard({ nudgeText }: SmartNudgeCardProps) {
   return (
-    <View style={styles.nudgeCard}>
-      <View style={styles.nudgeHeader}>
-        <View style={styles.nudgeBadge}>
-          <Ionicons name="sparkles" size={13} color={colors.accentPurple} />
-          <Text style={styles.nudgeBadgeText}>NOVA AI SMART NUDGE</Text>
-        </View>
-        <Text style={styles.nudgeTime}>Just now</Text>
-      </View>
+    <View style={styles.competitionContainer}>
+      <Text style={styles.competitionSectionHeader}>TEAM COMPETITION</Text>
 
-      <Text style={styles.nudgeBody}>{nudgeText}</Text>
+      {teams.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="people-outline" size={28} color={colors.textMuted} />
+          <Text style={styles.emptyStateTitle}>No teams assigned yet</Text>
+          <Text style={styles.emptyStateText}>
+            Team assignments will appear here when they are available.
+          </Text>
+        </View>
+      ) : (
+        teams.map((team, teamIndex) => (
+          <View key={`${team.team_name}-${teamIndex}`} style={styles.teamCard}>
+            <View style={styles.teamHeader}>
+              <View style={{ flex: 1, minWidth: 0, paddingRight: 10 }}>
+                <Text style={styles.teamSubtitle}>COMPETING TEAM #{teamIndex + 1}</Text>
+                <Text style={styles.teamTitle} numberOfLines={1}>
+                  {team.team_name || 'Unnamed Team'}
+                </Text>
+                <Text style={styles.teamMemberCount}>
+                  {team.members.length} {team.members.length === 1 ? 'member' : 'members'}
+                </Text>
+              </View>
+
+              <View style={styles.avatarStack}>
+                {team.members.slice(0, 4).map((member, index) => {
+                  const initial = member.name?.trim().charAt(0).toUpperCase() || '?';
+                  const memberColors = [
+                    '#10B981',
+                    '#F59E0B',
+                    '#3B82F6',
+                    '#8B5CF6',
+                    '#EC4899',
+                  ];
+
+                  return (
+                    <View
+                      key={String(member.user_id)}
+                      style={[
+                        styles.avatarCircle,
+                        {
+                          backgroundColor: memberColors[index % memberColors.length],
+                          zIndex: 10 - index,
+                          marginLeft: index === 0 ? 0 : -10,
+                        },
+                      ]}
+                    >
+                      <Text style={styles.avatarText}>{initial}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={styles.teamGoalRow}>
+              {stepsTarget && (
+                <View style={styles.teamGoalChip}>
+                  <Text style={styles.teamGoalValue}>
+                    {stepsTarget.value.toLocaleString()}
+                  </Text>
+                  <Text style={styles.teamGoalLabel}>{stepsTarget.unit} · team goal</Text>
+                </View>
+              )}
+
+              {floorsTarget && (
+                <View style={styles.teamGoalChip}>
+                  <Text style={styles.teamGoalValue}>
+                    {floorsTarget.value.toLocaleString()}
+                  </Text>
+                  <Text style={styles.teamGoalLabel}>{floorsTarget.unit} · team goal</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.teamMembersContainer}>
+              <Text style={styles.teamMembersHeader}>TEAM ROSTER</Text>
+
+              {team.members.length === 0 ? (
+                <Text style={styles.teamEmptyText}>No members assigned.</Text>
+              ) : (
+                team.members.map((member, memberIndex) => {
+                  const initial = member.name?.trim().charAt(0).toUpperCase() || '?';
+                  const memberColors = [
+                    '#10B981',
+                    '#F59E0B',
+                    '#3B82F6',
+                    '#8B5CF6',
+                    '#EC4899',
+                  ];
+
+                  return (
+                    <View key={String(member.user_id)} style={styles.memberRow}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 }}>
+                        <View
+                          style={[
+                            styles.memberRowAvatar,
+                            { backgroundColor: memberColors[memberIndex % memberColors.length] },
+                          ]}
+                        >
+                          <Text style={styles.avatarText}>{initial}</Text>
+                        </View>
+
+                        <View style={{ flex: 1, minWidth: 0, marginLeft: 10 }}>
+                          <Text style={styles.memberName} numberOfLines={1}>
+                            {member.name || 'Unnamed member'}
+                          </Text>
+                          <Text style={styles.memberDepartment} numberOfLines={1}>
+                            {member.department_name || 'Department not specified'}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          </View>
+        ))
+      )}
     </View>
   );
+}
+
+interface HealthMetricsGridProps {
+  healthData: HealthData | null;
 }
 
 function HealthMetricsGrid({ healthData }: HealthMetricsGridProps) {
@@ -527,8 +340,15 @@ function HealthMetricsGrid({ healthData }: HealthMetricsGridProps) {
   );
 }
 
+interface ErrorAlertProps {
+  error: string | null;
+}
+
 function ErrorAlert({ error }: ErrorAlertProps) {
-  if (!error) return null;
+  if (!error) {
+    return null;
+  }
+
   return (
     <View style={styles.errorCard}>
       <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
@@ -537,186 +357,187 @@ function ErrorAlert({ error }: ErrorAlertProps) {
   );
 }
 
-function AiSprintModal({ visible, latestAiChallenge, onClose }: AiSprintModalProps) {
-  const primaryTarget = latestAiChallenge?.activity_data?.targets?.[0];
-
+function LoadingScreen({ message }: { message: string }) {
   return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={onClose}
+    <SafeAreaView
+      style={[
+        styles.safeArea,
+        { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+      ]}
     >
-      <View style={styles.modalOverlay}>
-        <View style={[styles.modalContent, { borderColor: '#A3E635', borderWidth: 1.5 }]}>
-          <View style={styles.modalHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Ionicons name="sparkles" size={18} color="#A3E635" />
-              <Text style={[styles.modalTitle, { color: '#A3E635' }]}>New Gemini AI Sprint</Text>
-            </View>
-            <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close-circle" size={24} color={colors.textMuted} />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={{ fontSize: 18, fontWeight: '800', color: '#FFFFFF', marginBottom: 8 }}>
-            {latestAiChallenge?.name || 'AI Sprint Created'}
-          </Text>
-
-          <Text style={[styles.modalBodyText, { color: '#D1D5DB', fontSize: 14, lineHeight: 20 }]}>
-            {latestAiChallenge?.description || 'Your team has been assigned a new Gemini AI fitness challenge!'}
-          </Text>
-
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#111827', padding: 12, borderRadius: 12, marginVertical: 14 }}>
-            <Text style={{ color: '#9CA3AF', fontSize: 13, fontWeight: '600' }}>
-              Target: {primaryTarget ? `${primaryTarget.value.toLocaleString()} ${primaryTarget.unit}` : '24,000 steps'}
-            </Text>
-            <Text style={{ color: '#A3E635', fontSize: 13, fontWeight: '800' }}>
-              +{latestAiChallenge?.award_points ?? 120} PTS
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.modalCloseBtn, { backgroundColor: '#A3E635' }]}
-            onPress={onClose}
-          >
-            <Text style={[styles.modalCloseBtnText, { color: '#000000' }]}>Let's Sprint! 🚀</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
+      <StatusBar style="light" />
+      <ActivityIndicator size="large" color={colors.accentCyan} />
+      <Text
+        style={{
+          color: colors.textSecondary,
+          marginTop: 16,
+          fontSize: 14,
+          fontWeight: '600',
+        }}
+      >
+        {message}
+      </Text>
+    </SafeAreaView>
   );
 }
 
 // -----------------------------------------------------------------------------
-// Main Component
+// Main screen
 // -----------------------------------------------------------------------------
 
+const challengeCacheKey = 'today_daily_challenge';
+
 export default function ChallengeScreen() {
-  // State
+  const [dailyChallenge, setDailyChallenge] =
+    useState<DailyChallengeResponse | null>(() =>
+      getCache<DailyChallengeResponse>(challengeCacheKey)
+    );
+
+  const [loading, setLoading] = useState(() =>
+    !getCache<DailyChallengeResponse>(challengeCacheKey)
+  );
   const [healthData, setHealthData] = useState<HealthData | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [aiModalVisible, setAiModalVisible] = useState<boolean>(false);
-  const [activeChallenge, setActiveChallenge] = useState<Challenge | null>(MOCK_CHALLENGES[0]);
-  const [latestAiChallenge, setLatestAiChallenge] = useState<Challenge | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const [heroBgImage, setHeroBgImage] = useState<ImageSourcePropType>(FITNESS_IMAGES[0]);
 
-  // Fitness background image selection (stable per challenge)
-  const [heroBgImage, setHeroBgImage] = useState<any>(() => {
-    const initialIndex = Math.floor(Math.random() * FITNESS_IMAGES.length);
-    return FITNESS_IMAGES[initialIndex];
-  });
-
-  const challengeKey = activeChallenge?.id ?? activeChallenge?.name;
+  const challenge = dailyChallenge?.gemini_challenge ?? null;
 
   useEffect(() => {
-    if (challengeKey) {
-      const randomIndex = Math.floor(Math.random() * FITNESS_IMAGES.length);
-      setHeroBgImage(FITNESS_IMAGES[randomIndex]);
+    if (!dailyChallenge) {
+      return;
     }
-  }, [challengeKey]);
 
-  // Constants & Calculations
-  const primaryTarget = activeChallenge?.activity_data?.targets?.[0];
-  const TEAMMATES_STEPS_BASELINE = 6280;
-  const TEAM_GOAL_STEPS = primaryTarget?.value || 24000;
-  const userSteps = healthData?.steps ?? 0;
+    const seed = `${dailyChallenge.id}-${dailyChallenge.challenge_date}`;
+    let hash = 0;
 
-  // Derive team total steps from progress records if present, or use demo fallback if absent
-  const hasProgressRecords = Array.isArray(activeChallenge?.progress_records) && activeChallenge.progress_records.length > 0;
-  const teamTotalSteps = hasProgressRecords
-    ? activeChallenge!.progress_records!.reduce((sum, rec) => sum + (rec.current_value || 0), 0)
-    : (userSteps + TEAMMATES_STEPS_BASELINE); // Temporary demo fallback
-
-  const teamProgressPercent = TEAM_GOAL_STEPS > 0 ? Math.min(Math.round((teamTotalSteps / TEAM_GOAL_STEPS) * 100), 100) : 0;
-  const remainingSteps = Math.max(0, TEAM_GOAL_STEPS - teamTotalSteps);
-
-  // Data Fetching & Sync Handlers
-  const loadChallenges = useCallback(async () => {
-    try {
-      const res = await fetchChallenges(1, 'ACTIVE');
-      if (res.data && res.data.length > 0) {
-        setActiveChallenge(res.data[0]);
-      } else {
-        // Fallback to mock challenge if API returns empty
-        setActiveChallenge(MOCK_CHALLENGES[0]);
-      }
-    } catch (e) {
-      console.warn('Failed to load challenges, using mock:', e);
-      setActiveChallenge(MOCK_CHALLENGES[0]);
+    for (let index = 0; index < seed.length; index += 1) {
+      hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
     }
-  }, []);
 
-  const syncHealthData = useCallback(async () => {
-    if (!healthData && !activeChallenge) {
-      setLoading(true);
-    }
+    setHeroBgImage(FITNESS_IMAGES[hash % FITNESS_IMAGES.length]);
+  }, [dailyChallenge]);
+
+  const loadData = useCallback(async () => {
     setError(null);
-    try {
-      await loadChallenges();
-      const provider = getHealthProvider();
-      const data = await provider.getTodayHealthData();
-      setHealthData(data);
-    } catch (err: any) {
-      const msg = err?.message || String(err);
-      setError(msg);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+    setHealthError(null);
+
+    const challengeRequest = fetchChallenges()
+      .then((response) => {
+        if (!response.data) {
+          throw new Error(response.error || 'No challenge available today.');
+        }
+        const data = response.data;
+        setDailyChallenge(data);
+        setCache(challengeCacheKey, data);
+      });
+
+    const healthRequest = getHealthProvider()
+      .getTodayHealthData()
+      .then((data) => {
+        setHealthData(data);
+      });
+
+    const [challengeResult, healthResult] = await Promise.allSettled([
+      challengeRequest,
+      healthRequest,
+    ]);
+
+    if (challengeResult.status === 'rejected') {
+      setError(
+        challengeResult.reason instanceof Error
+          ? challengeResult.reason.message
+          : 'Unable to load today’s challenge.'
+      );
     }
-  }, [loadChallenges, healthData, activeChallenge]);
 
-  // ---------------------------------------------------------------------------
-  // TEMPORARY DEMO BEHAVIOR: Auto-refresh health data every 3 seconds
-  // ---------------------------------------------------------------------------
-  const isSyncingRef = useRef<boolean>(false);
-  const syncHealthDataRef = useRef(syncHealthData);
+    if (healthResult.status === 'rejected') {
+      setHealthError(
+        healthResult.reason instanceof Error
+          ? healthResult.reason.message
+          : 'Unable to read today’s health data.'
+      );
+    }
+
+    setLoading(false);
+  }, [challengeCacheKey]);
+
 
   useEffect(() => {
-    syncHealthDataRef.current = syncHealthData;
-  }, [syncHealthData]);
+    let mounted = true;
 
-  useEffect(() => {
-    let isCancelled = false;
-
-    const runAutoSync = async () => {
-      if (isSyncingRef.current || isCancelled) return;
-      isSyncingRef.current = true;
+    const initialize = async () => {
       try {
-        await syncHealthDataRef.current();
+        await loadData();
       } finally {
-        isSyncingRef.current = false;
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
-    // Initial sync on mount
-    runAutoSync();
-
-    // Repeat every 3 seconds for demo/development testing
-    const autoSyncInterval = setInterval(() => {
-      runAutoSync();
-    }, 3000);
+    void initialize();
 
     return () => {
-      isCancelled = true;
-      clearInterval(autoSyncInterval);
+      mounted = false;
     };
-  }, []);
+  }, [loadData]);
 
   const handlePullRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await syncHealthData();
-  }, [syncHealthData]);
+    if (refreshing) {
+      return;
+    }
 
-  // Loading View (fallback if initial data sync occurs)
-  if (loading && !healthData && !activeChallenge) {
-    return <LoadingScreen message="Syncing Live Challenge & Health Data..." />;
+    setRefreshing(true);
+
+    try {
+      await loadData();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadData, refreshing]);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={{ flex: 1 }}>
+        <View
+          style={{
+            flex: 1,
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <AIProcessingAnimation />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!challenge) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <StatusBar style="light" />
+        <ScrollView contentContainerStyle={styles.container}>
+          <HeaderBar title="Challenges" />
+
+          <View style={styles.emptyState}>
+            <Ionicons name="trophy-outline" size={32} color={colors.textMuted} />
+            <Text style={styles.emptyStateTitle}>No active challenge</Text>
+            <Text style={styles.emptyStateText}>
+              There is no active challenge available right now. Pull down to try again.
+            </Text>
+            <ErrorAlert error={error} />
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
   }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar style="light" />
+
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
@@ -730,40 +551,22 @@ export default function ChallengeScreen() {
           />
         }
       >
-        {/* Top Header Bar */}
         <HeaderBar title="Challenges" />
 
-        {/* 1. Biometric AI Hero Card */}
-        <HeroCard
-          activeChallenge={activeChallenge}
-          backgroundImage={heroBgImage}
-        />
+        <HeroCard challenge={challenge} backgroundImage={heroBgImage} />
 
-        {/* 2. Challenge Details Card */}
-        <ChallengeDetailsCard activeChallenge={activeChallenge} />
+        <ChallengeDetailsCard challenge={challenge} />
 
-        {/* 3. Team Competition Section */}
         <TeamCompetitionSection
-          activeChallenge={activeChallenge}
-          userSteps={userSteps}
+          teams={dailyChallenge?.teams ?? []}
+          targets={challenge.activity_data.targets}
         />
 
-        {/* 4. AI Smart Nudge Card */}
-        <SmartNudgeCard nudgeText='"Nova: A 9-min walk each closes the gap. Try a 3:30 PM stroll."' />
-
-        {/* 5. Health Metrics Grid */}
         <HealthMetricsGrid healthData={healthData} />
 
-        {/* Error Alert */}
-        <ErrorAlert error={error} />
+        {error && <ErrorAlert error={error} />}
+        {healthError && <ErrorAlert error={healthError} />}
       </ScrollView>
-
-      {/* Gemini AI Sprint Modal */}
-      <AiSprintModal
-        visible={aiModalVisible}
-        latestAiChallenge={latestAiChallenge}
-        onClose={() => setAiModalVisible(false)}
-      />
     </SafeAreaView>
   );
 }
@@ -1005,52 +808,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  teamStepsRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginBottom: 12,
-    flexWrap: 'wrap',
-  },
-  teamStepsBig: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    letterSpacing: -0.5,
-  },
-  teamStepsGoal: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textMuted,
-  },
-  progressSection: {
-    width: '100%',
-    marginBottom: 16,
-  },
-  progressLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  progressPercentText: {
-    color: colors.accentGreen,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  remainingStepsText: {
-    color: colors.textMuted,
-    fontSize: 11,
-  },
-  progressBarTrack: {
-    height: 7,
-    backgroundColor: colors.cardSecondary,
-    borderRadius: 3.5,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: colors.accentGreen,
-    borderRadius: 3.5,
-  },
   teamMembersContainer: {
     backgroundColor: colors.cardSecondary,
     borderRadius: 14,
@@ -1082,47 +839,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: colors.textPrimary,
-  },
-  memberSteps: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.accentGreen,
-  },
-  nudgeCard: {
-    backgroundColor: colors.cardSecondary,
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.3)',
-    marginBottom: 16,
-  },
-  nudgeHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  nudgeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  nudgeBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: colors.accentPurple,
-    letterSpacing: 1,
-  },
-  nudgeTime: {
-    fontSize: 10,
-    color: colors.textMuted,
-  },
-  nudgeBody: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    lineHeight: 18,
-    fontStyle: 'italic',
   },
   statsGrid: {
     flexDirection: 'row',
@@ -1163,61 +879,68 @@ const styles = StyleSheet.create({
     fontSize: 12,
     flex: 1,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'center',
-    padding: 20,
+  teamMemberCount: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 3,
   },
-  modalContent: {
-    backgroundColor: colors.card,
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: colors.accentGreen,
+  memberDepartment: {
+    fontSize: 10,
+    color: colors.textMuted,
+    marginTop: 1,
   },
-  modalHeader: {
+  teamGoalRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    gap: 8,
+    marginBottom: 14,
   },
-  modalTitle: {
-    fontSize: 18,
+  teamGoalChip: {
+    flex: 1,
+    backgroundColor: colors.cardSecondary,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: colors.cardBorderSubtle,
+    alignItems: 'center',
+  },
+  teamGoalValue: {
+    fontSize: 14,
     fontWeight: '800',
     color: colors.textPrimary,
   },
-  modalBodyText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 20,
-    marginBottom: 20,
+  teamGoalLabel: {
+    fontSize: 9,
+    color: colors.textMuted,
+    marginTop: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
   },
-  modalCloseBtn: {
-    backgroundColor: colors.accentGreen,
-    paddingVertical: 12,
-    borderRadius: 12,
+  teamEmptyText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    paddingVertical: 8,
+  },
+  emptyState: {
+    backgroundColor: colors.card,
+    borderRadius: 18,
+    padding: 24,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
   },
-  modalCloseBtnText: {
-    color: colors.textDark,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  aiIntroContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000000',
-  },
-  aiIntroContent: {
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  aiIntroTitle: {
-    fontSize: 22,
+  emptyStateTitle: {
+    fontSize: 16,
     fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 2,
-    marginBottom: 8,
+    color: colors.textPrimary,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  emptyStateText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
+
