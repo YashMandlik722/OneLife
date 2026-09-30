@@ -1,9 +1,9 @@
 /**
  * Centralized API Client for OneLife Backend
- * Target Host: http://10.81.2.251:8000
+ * Target Host: http://10.81.0.238:8000
  */
 
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.81.2.251:8000';
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.81.0.238:8000';
 
 export interface ApiResponse<T = any> {
   success: boolean;

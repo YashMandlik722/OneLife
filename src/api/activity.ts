@@ -12,6 +12,7 @@ export interface LogActivityPayload {
   user_id?: string | number;
   steps: number;
   calories: number;
+  distance?: number; // distance in km
   elevation: number; // elevation gained in meters / floors
   activity_date?: string; // YYYY-MM-DD
 }
@@ -21,6 +22,7 @@ export interface ActivityRecord {
   user_id: string | number;
   steps: number;
   calories: number;
+  distance?: number;
   elevation: number;
   activity_date: string;
   created_at: string;
@@ -50,6 +52,7 @@ export async function submitActivity(
     user_id: typeof targetUserId === 'string' ? parseInt(targetUserId, 10) || 1 : targetUserId,
     steps: Math.max(0, payload.steps || 0),
     calories: Math.max(0, payload.calories || 0),
+    distance: Math.max(0, payload.distance || 0),
     elevation: Math.max(0, payload.elevation || 0),
     activity_date: payload.activity_date || todayStr,
   };
@@ -100,6 +103,7 @@ export async function syncNativeHealthKitActivity(
       user_id: targetUserId,
       steps: health.steps,
       calories: health.caloriesKcal || Math.round(health.steps * 0.04),
+      distance: health.distanceKm || parseFloat((health.steps * 0.00075).toFixed(2)),
       elevation: health.floorsClimbed || Math.round(health.steps / 650),
       activity_date: todayStr,
     });
