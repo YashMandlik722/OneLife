@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import LoginScreen from './src/screens/LoginScreen';
@@ -7,10 +8,31 @@ import TabNavigator from './src/navigation/TabNavigator';
 import { startForegroundSync, stopForegroundSync } from './src/services/activitySyncManager';
 import { prefetchLeaderboard } from './src/api/leaderboard';
 import { getActiveUserId, setActiveUserEmail } from './src/api/client';
+import { loadSession, clearSession } from './src/utils/sessionStorage';
+import { colors } from './src/theme/colors';
 
 export default function App() {
   const [authStep, setAuthStep] = useState<'login' | 'otp' | 'authenticated'>('login');
   const [userEmail, setUserEmail] = useState('');
+  const [initializing, setInitializing] = useState(true);
+
+  // Check stored 15-day persistent session on App Launch
+  useEffect(() => {
+    async function checkSession() {
+      try {
+        const session = await loadSession();
+        if (session && session.token) {
+          setUserEmail(session.email);
+          setAuthStep('authenticated');
+        }
+      } catch (err) {
+        console.warn('[App] Error initializing session:', err);
+      } finally {
+        setInitializing(false);
+      }
+    }
+    checkSession();
+  }, []);
 
   useEffect(() => {
     let leaderboardInterval: ReturnType<typeof setInterval> | null = null;
@@ -50,6 +72,21 @@ export default function App() {
     setAuthStep('login');
   };
 
+  const handleSignOut = async () => {
+    await clearSession();
+    setUserEmail('');
+    setAuthStep('login');
+  };
+
+  if (initializing) {
+    return (
+      <SafeAreaProvider style={styles.splashContainer}>
+        <StatusBar style="light" />
+        <ActivityIndicator size="large" color={colors.accentCyan} />
+      </SafeAreaProvider>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
@@ -65,9 +102,19 @@ export default function App() {
         />
       )}
       {authStep === 'authenticated' && (
-        <TabNavigator onSignOut={() => setAuthStep('login')} />
+        <TabNavigator onSignOut={handleSignOut} />
       )}
     </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  splashContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+});
+
 

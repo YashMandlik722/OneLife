@@ -23,7 +23,7 @@ export default function TabNavigator({ onSignOut }: TabNavigatorProps) {
       <View style={styles.screenContainer}>
         {activeTab === 'Challenge' && <ChallengeScreen />}
         {activeTab === 'Leaderboard' && <LeaderboardScreen />}
-        {activeTab === 'Me' && <MeScreen />}
+        {activeTab === 'Me' && <MeScreen onSignOut={onSignOut} />}
       </View>
 
       {/* Custom Bottom Tab Bar */}

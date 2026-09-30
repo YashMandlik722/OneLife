@@ -120,7 +120,7 @@ export default function LoginScreen({ onSendOtp }: LoginScreenProps) {
           <View style={styles.demoCallout}>
             <Ionicons name="shield-checkmark-outline" size={18} color={colors.accentGreen} />
             <Text style={styles.demoText}>
-              <Text style={styles.demoBold}>Secure Login: </Text>OTP verification required via API.
+              <Text style={styles.demoBold}>Secure Login: </Text>OTP verification required
             </Text>
           </View>
         </View>
