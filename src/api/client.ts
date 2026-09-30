@@ -1,9 +1,9 @@
 /**
  * Centralized API Client for OneLife Backend
- * Target Host: http://10.81.2.251:8000
+ * Target Host: http://10.81.0.238:8000
  */
 
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.81.2.251:8000';
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.81.0.238:8000';
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -13,7 +13,8 @@ export interface ApiResponse<T = any> {
 }
 
 let authToken: string | null = null;
-let activeUserId: string | number = 104; // Default session user_id (104 - Yash Mandlik)
+let activeUserId: string | number = 104;
+let activeUserEmail: string | null = null;
 
 export const setAuthToken = (token: string | null) => {
   authToken = token;
@@ -28,6 +29,14 @@ export const setActiveUserId = (userId: string | number | null | undefined) => {
 };
 
 export const getActiveUserId = (): string | number => activeUserId;
+
+export const setActiveUserEmail = (email: string | null | undefined) => {
+  if (email) {
+    activeUserEmail = email;
+  }
+};
+
+export const getActiveUserEmail = (): string | null => activeUserEmail;
 
 export async function apiFetch<T = any>(
   endpoint: string,

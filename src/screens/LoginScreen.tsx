@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 
 
-import { requestOtp, DEMO_MODE_BYPASS } from '../api/auth';
+import { requestOtp } from '../api/auth';
 import { getFriendlyErrorMessage } from '../utils/errorFormatter';
 
 interface LoginScreenProps {
@@ -23,7 +23,7 @@ interface LoginScreenProps {
 }
 
 export default function LoginScreen({ onSendOtp }: LoginScreenProps) {
-  const [email, setEmail] = useState('yash.mandlik@digivalet.com');
+  const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -42,23 +42,13 @@ export default function LoginScreen({ onSendOtp }: LoginScreenProps) {
       if (res.success) {
         onSendOtp(email);
       } else {
-        if (DEMO_MODE_BYPASS) {
-          console.warn('[DemoMode] Request OTP returned error, proceeding to verification:', res.message);
-          onSendOtp(email);
-        } else {
-          const friendlyError = getFriendlyErrorMessage(res.message, undefined, 'login');
-          setError(friendlyError);
-        }
+        const friendlyError = getFriendlyErrorMessage(res.message, undefined, 'login');
+        setError(friendlyError);
       }
     } catch (err: any) {
       setLoading(false);
-      if (DEMO_MODE_BYPASS) {
-        console.warn('[DemoMode] Network error in requestOtp, proceeding to verification:', err?.message);
-        onSendOtp(email);
-      } else {
-        const friendlyError = getFriendlyErrorMessage(err?.message, undefined, 'login');
-        setError(friendlyError);
-      }
+      const friendlyError = getFriendlyErrorMessage(err?.message, undefined, 'login');
+      setError(friendlyError);
     }
   };
 
@@ -99,7 +89,7 @@ export default function LoginScreen({ onSendOtp }: LoginScreenProps) {
                   setEmail(text);
                   if (error) setError('');
                 }}
-                placeholder="you@company.com"
+                placeholder="user@digivalet.com"
                 placeholderTextColor={colors.textMuted}
                 keyboardType="email-address"
                 autoCapitalize="none"

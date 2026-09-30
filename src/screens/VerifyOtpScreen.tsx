@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 
-import { verifyOtp, requestOtp, DEMO_MODE_BYPASS } from '../api/auth';
+import { verifyOtp, requestOtp } from '../api/auth';
 import { getFriendlyErrorMessage } from '../utils/errorFormatter';
 
 interface VerifyOtpScreenProps {
@@ -24,12 +24,12 @@ interface VerifyOtpScreenProps {
 }
 
 export default function VerifyOtpScreen({
-  email = 'yash.mandlik@digivalet.com',
+  email = 'user@digivalet.com',
   onVerifySuccess,
   onBack,
 }: VerifyOtpScreenProps) {
-  // Pre-filled 6-digit OTP boxes for rapid demo testing
-  const [otp, setOtp] = useState<string[]>(['1', '2', '3', '4', '5', '6']);
+  // Empty 6-digit OTP input boxes waiting for user entry
+  const [otp, setOtp] = useState<string[]>(['', '', '', '', '', '']);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -74,23 +74,13 @@ export default function VerifyOtpScreen({
       if (res.success && res.data?.token) {
         onVerifySuccess();
       } else {
-        if (DEMO_MODE_BYPASS) {
-          console.warn('[DemoMode] OTP verification non-success, proceeding in demo mode:', res.message);
-          onVerifySuccess();
-        } else {
-          const friendlyError = getFriendlyErrorMessage(res.message, undefined, 'verify');
-          setError(friendlyError);
-        }
+        const friendlyError = getFriendlyErrorMessage(res.message, undefined, 'verify');
+        setError(friendlyError);
       }
     } catch (err: any) {
       setLoading(false);
-      if (DEMO_MODE_BYPASS) {
-        console.warn('[DemoMode] Network error in verifyOtp, proceeding in demo mode:', err?.message);
-        onVerifySuccess();
-      } else {
-        const friendlyError = getFriendlyErrorMessage(err?.message, undefined, 'verify');
-        setError(friendlyError);
-      }
+      const friendlyError = getFriendlyErrorMessage(err?.message, undefined, 'verify');
+      setError(friendlyError);
     }
   };
 

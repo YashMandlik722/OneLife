@@ -6,10 +6,9 @@
  * - GET /api/v1/leaderboards/departments
  */
 
-import { apiFetch } from './client';
+import { apiFetch, setActiveUserId, getActiveUserEmail } from './client';
 import { fetchWithCache, TTL } from '../utils/cache';
 import { LeaderboardUserEntry, LeaderboardDepartmentEntry } from '../types/database';
-import { setActiveUserId } from './client';
 
 export interface ApiUserLeaderboardItem {
   rank: number;
@@ -60,12 +59,12 @@ export function transformUserLeaderboardItems(
   items: ApiUserLeaderboardItem[],
   currentEmail?: string
 ): LeaderboardUserEntry[] {
+  const targetEmail = (currentEmail || getActiveUserEmail() || '').trim().toLowerCase();
+
   return items.map((item, index) => {
     const rank = item.rank || index + 1;
-    const isCurrentUser =
-      Boolean(currentEmail && item.user?.email?.toLowerCase() === currentEmail.toLowerCase()) ||
-      item.user?.email?.includes('yash.mandlik') ||
-      false;
+    const itemEmail = (item.user?.email || '').trim().toLowerCase();
+    const isCurrentUser = Boolean(targetEmail && itemEmail.length > 0 && itemEmail === targetEmail);
 
     if (isCurrentUser && item.user?.id) {
       setActiveUserId(item.user.id);
@@ -155,10 +154,41 @@ export async function fetchUserLeaderboard(
     'leaderboard_users',
     async () => {
       const res = await apiFetch<ApiUserLeaderboardItem[]>('/api/v1/leaderboards/users');
-      if (res.success && Array.isArray(res.data)) {
+      let rawItems = res.success && Array.isArray(res.data) ? [...res.data] : [];
+
+      // If backend leaderboard returns fewer than 10 users, supplement with all users from /api/v1/users
+      if (rawItems.length < 10) {
+        try {
+          const usersRes = await apiFetch<any[]>('/api/v1/users');
+          if (usersRes.success && Array.isArray(usersRes.data)) {
+            const existingIds = new Set(rawItems.map((item) => String(item.user?.id)));
+            const allUsers = usersRes.data.map((u) => u.user || u);
+            let nextRank = rawItems.length + 1;
+
+            for (const u of allUsers) {
+              if (u?.id && !existingIds.has(String(u.id))) {
+                rawItems.push({
+                  rank: nextRank++,
+                  user: {
+                    id: u.id,
+                    name: u.name || 'Team Member',
+                    email: u.email || '',
+                  },
+                  department: u.department || { name: 'General' },
+                  points: 0,
+                });
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to supplement leaderboard with all users:', err);
+        }
+      }
+
+      if (rawItems.length > 0) {
         return {
           success: true,
-          data: transformUserLeaderboardItems(res.data, currentEmail),
+          data: transformUserLeaderboardItems(rawItems, currentEmail),
         };
       }
       return { success: false, message: res.message };

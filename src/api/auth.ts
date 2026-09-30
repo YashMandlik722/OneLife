@@ -3,14 +3,14 @@
  * Handles OTP request & OTP verification according to OpenAPI specification.
  */
 
-import { apiFetch, setAuthToken, ApiResponse } from './client';
+import { apiFetch, setAuthToken, setActiveUserEmail, ApiResponse } from './client';
 import { User } from '../types/database';
 
 /**
  * TOGGLE: Set to true for rapid dev/demo walkthroughs (bypasses static OTP 123456).
  * Set to false for strict production backend authentication.
  */
-export const DEMO_MODE_BYPASS = true;
+export const DEMO_MODE_BYPASS = false;
 
 export interface RequestOtpResponseData {
   message?: string;
@@ -53,6 +53,7 @@ export async function verifyOtp(
   if (result.success && result.data && result.data.token) {
     // Save JWT token in memory client
     setAuthToken(result.data.token);
+    setActiveUserEmail(email);
   }
 
   return result;

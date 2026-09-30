@@ -379,7 +379,8 @@ const styles = StyleSheet.create({
 
 
   container: {
-    padding: 20,
+    paddingHorizontal: 0,
+    paddingTop: 0,
     paddingBottom: 20,
   },
   header: {
@@ -388,6 +389,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 20,
     marginTop: 8,
+    paddingHorizontal: 20,
   },
   identityRow: {
     flexDirection: 'row',
@@ -436,6 +438,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.cardBorder,
     marginBottom: 20,
+    marginHorizontal: 20,
   },
   segmentTab: {
     flex: 1,
@@ -458,11 +461,15 @@ const styles = StyleSheet.create({
   },
   activityCard: {
     backgroundColor: colors.card,
-    borderRadius: 24,
-    padding: 24,
+    borderRadius: 0,
+    width: '100%',
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    margin: 0,
+    marginHorizontal: 0,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderWidth: 0,
+    borderColor: 'transparent',
     marginBottom: 24,
   },
   activityCardHeader: {
@@ -564,6 +571,7 @@ const styles = StyleSheet.create({
   },
   sectionHeader: {
     marginBottom: 8,
+    paddingHorizontal: 20,
   },
   sectionTitle: {
     fontSize: 12,
@@ -576,6 +584,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     gap: 12,
+    paddingHorizontal: 20,
   },
   widgetCard: {
     width: '48%',
