@@ -46,7 +46,7 @@ type Layer = {
   tx: (number | string)[];
   ty: (number | string)[];
   rot: (number | string)[];
-  inner: [number | string, number | string];
+  inner: (number | string)[];
   d: string;
 };
 
@@ -940,19 +940,25 @@ export default function AIProcessingAnimation({
           </Defs>
 
           {LAYERS.map((layer, index) => {
+            const txNums = layer.tx.map((v) => typeof v === 'number' ? v : parseFloat(v));
+            const tyNums = layer.ty.map((v) => typeof v === 'number' ? v : parseFloat(v));
+            const rotNums = layer.rot.map((v) => typeof v === 'number' ? v : parseFloat(v));
+            const innerX = typeof layer.inner[0] === 'number' ? layer.inner[0] : parseFloat(layer.inner[0]);
+            const innerY = typeof layer.inner[1] === 'number' ? layer.inner[1] : parseFloat(layer.inner[1]);
+
             const translateX = progress.interpolate({
               inputRange: KEY_TIMES,
-              outputRange: layer.tx as any,
+              outputRange: txNums,
             });
 
             const translateY = progress.interpolate({
               inputRange: KEY_TIMES,
-              outputRange: layer.ty as any,
+              outputRange: tyNums,
             });
 
             const rotation = progress.interpolate({
               inputRange: KEY_TIMES,
-              outputRange: layer.rot.map((value) => `${value}deg`),
+              outputRange: rotNums.map((value) => `${value}deg`),
             });
 
             /*
@@ -973,8 +979,8 @@ export default function AIProcessingAnimation({
                   { translateX },
                   { translateY },
                   { rotate: rotation },
-                  { translateX: Number(layer.inner[0]) },
-                  { translateY: Number(layer.inner[1]) },
+                  { translateX: innerX },
+                  { translateY: innerY },
                 ] as any}
               >
                 <Path

@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 
 import { verifyOtp, requestOtp } from '../api/auth';
+import { saveSession } from '../utils/sessionStorage';
 import { getFriendlyErrorMessage } from '../utils/errorFormatter';
 
 interface VerifyOtpScreenProps {
@@ -72,6 +73,7 @@ export default function VerifyOtpScreen({
       setLoading(false);
 
       if (res.success && res.data?.token) {
+        await saveSession(res.data.token, email, res.data.user?.id);
         onVerifySuccess();
       } else {
         const friendlyError = getFriendlyErrorMessage(res.message, undefined, 'verify');

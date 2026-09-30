@@ -9,6 +9,7 @@ import {
   Platform,
   Image,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -16,20 +17,25 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 
-
 import { getHealthProvider, HealthData } from '../health';
 import { fetchUserDashboard, fetchMeProfile, UserDashboardData } from '../api/user';
 import { syncNativeHealthKitActivity } from '../api/activity';
 import { User, LeaderboardUserEntry } from '../types/database';
 import { getCache } from '../utils/cache';
+import { clearSession } from '../utils/sessionStorage';
 
-export default function MeScreen() {
+interface MeScreenProps {
+  onSignOut?: () => void;
+}
+
+export default function MeScreen({ onSignOut }: MeScreenProps) {
   const [selectedSegment, setSelectedSegment] = useState<'Daily' | 'Weekly' | 'Monthly'>('Daily');
   const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [dashboardData, setDashboardData] = useState<UserDashboardData | null>(null);
   const [userProfile, setUserProfile] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [logoutModalVisible, setLogoutModalVisible] = useState<boolean>(false);
 
   const loadUserData = useCallback(async (forceRefresh: boolean = false) => {
     // 1. Fetch User Dashboard with SWR Cache
@@ -167,11 +173,14 @@ export default function MeScreen() {
               <Text style={styles.headerDateText}>{todayDateString}</Text>
             </View>
           </View>
-          <Image
-            source={require('../../assets/OneLifeInAppLogo.png')}
-            style={styles.topRightLogo}
-            resizeMode="contain"
-          />
+          <TouchableOpacity
+            style={styles.logoutHeaderButton}
+            onPress={() => setLogoutModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="log-out-outline" size={15} color="#EF4444" />
+            <Text style={styles.logoutHeaderText}>Log Out</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Daily / Weekly / Monthly Segment Switcher */}
@@ -358,6 +367,50 @@ export default function MeScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Logout Confirmation Modal Window */}
+      <Modal
+        visible={logoutModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLogoutModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalIconBox}>
+              <Ionicons name="log-out-outline" size={26} color="#EF4444" />
+            </View>
+            <Text style={styles.modalTitle}>Log Out</Text>
+            <Text style={styles.modalMessage}>
+              Are you sure you want to log out of your OneLife account?
+            </Text>
+
+            <View style={styles.modalButtonRow}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancelButton]}
+                onPress={() => setLogoutModalVisible(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalLogoutButton]}
+                onPress={async () => {
+                  setLogoutModalVisible(false);
+                  await clearSession();
+                  if (onSignOut) {
+                    onSignOut();
+                  }
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.modalLogoutButtonText}>Log Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -372,9 +425,103 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  logoutHeaderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    gap: 5,
+  },
+  logoutHeaderText: {
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
   topRightLogo: {
     width: 32,
     height: 32,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(5, 7, 13, 0.82)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  modalContainer: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#0F172A',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalIconBox: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  modalButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  modalCancelButtonText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalLogoutButton: {
+    backgroundColor: '#EF4444',
+  },
+  modalLogoutButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 
 
