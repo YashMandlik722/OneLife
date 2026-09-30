@@ -110,8 +110,8 @@ export default function MeScreen({ onSignOut }: MeScreenProps) {
     typeof rawPoints === 'number'
       ? rawPoints
       : typeof rawPoints?.total === 'number'
-      ? rawPoints.total
-      : (userProfile as any)?.points?.total ??
+        ? rawPoints.total
+        : (userProfile as any)?.points?.total ??
         (userProfile as any)?.points ??
         currentUserLeaderboard?.points ??
         0
@@ -178,7 +178,7 @@ export default function MeScreen({ onSignOut }: MeScreenProps) {
             onPress={() => setLogoutModalVisible(true)}
             activeOpacity={0.7}
           >
-            <Ionicons name="log-out-outline" size={15} color="#EF4444" />
+            <Ionicons name="log-out-outline" size={15} color="#b9b9b7ff" />
             <Text style={styles.logoutHeaderText}>Log Out</Text>
           </TouchableOpacity>
         </View>
@@ -428,16 +428,16 @@ const styles = StyleSheet.create({
   logoutHeaderButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    backgroundColor: 'rgba(187, 187, 187, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderColor: 'rgba(166, 166, 166, 0.3)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 14,
     gap: 5,
   },
   logoutHeaderText: {
-    color: '#EF4444',
+    color: '#b9b9b7ff',
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.2,
