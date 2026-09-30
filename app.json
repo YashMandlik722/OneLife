@@ -13,7 +13,11 @@
       "infoPlist": {
         "NSHealthShareUsageDescription": "This app requires HealthKit access to read your daily step count.",
         "NSHealthUpdateUsageDescription": "This app requires HealthKit access to read your daily step count.",
-        "UIBackgroundModes": ["fetch"]
+        "UIBackgroundModes": [
+          "fetch",
+          "fetch"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
         "com.apple.developer.healthkit": true
@@ -22,7 +26,11 @@
     },
     "android": {
       "package": "com.commitissues.onelife",
+      "usesCleartextTraffic": true,
       "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE",
         "android.permission.health.READ_STEPS",
         "android.permission.health.READ_DISTANCE",
         "android.permission.health.READ_FLOORS_CLIMBED",
@@ -34,8 +42,6 @@
         "backgroundImage": "./assets/OneLifeIconAndroid.png",
         "monochromeImage": "./assets/OneLifeIconAndroid.png"
       },
-
-
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -63,6 +69,11 @@
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "343d8b13-ec83-42af-a61b-b43eb8b56f4b"
+      }
+    }
   }
 }
