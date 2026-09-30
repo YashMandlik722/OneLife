@@ -71,7 +71,7 @@ export default function LoginScreen({ onSendOtp }: LoginScreenProps) {
 
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>Work email sign in</Text>
+            <Text style={styles.title}>Sign-in with email</Text>
             <Text style={styles.subtitle}>
               Enter your corporate email address to receive a secure one-time verification code.
             </Text>

@@ -14,7 +14,7 @@ interface TabNavigatorProps {
 }
 
 export default function TabNavigator({ onSignOut }: TabNavigatorProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('Challenge');
+  const [activeTab, setActiveTab] = useState<TabType>('Me');
   const insets = useSafeAreaInsets();
 
   return (

@@ -16,6 +16,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
+import { clearCache } from '../utils/cache';
 
 import { getHealthProvider, HealthData } from '../health';
 import { fetchUserDashboard, fetchMeProfile, UserDashboardData } from '../api/user';
@@ -151,6 +152,7 @@ export default function MeScreen({ onSignOut }: MeScreenProps) {
 
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar style="light" />
+
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
@@ -206,13 +208,13 @@ export default function MeScreen({ onSignOut }: MeScreenProps) {
         <View style={styles.activityCard}>
           <View style={styles.activityCardHeader}>
             <Text style={styles.activityCardSubtitle}>ACTIVITY POINTS</Text>
-            <TouchableOpacity onPress={() => fetchHealthData(true)} disabled={loading}>
+            {/* <TouchableOpacity onPress={() => fetchHealthData(true)} disabled={loading}>
               {loading ? (
                 <ActivityIndicator size="small" color={colors.accentGreen} />
               ) : (
                 <Ionicons name="refresh-outline" size={18} color={colors.textMuted} />
               )}
-            </TouchableOpacity>
+            </TouchableOpacity> */}
           </View>
 
           {/* Smooth Continuous 360-Degree Gradient Activity Ring */}
@@ -398,6 +400,7 @@ export default function MeScreen({ onSignOut }: MeScreenProps) {
                 style={[styles.modalButton, styles.modalLogoutButton]}
                 onPress={async () => {
                   setLogoutModalVisible(false);
+                  await clearCache();
                   await clearSession();
                   if (onSignOut) {
                     onSignOut();

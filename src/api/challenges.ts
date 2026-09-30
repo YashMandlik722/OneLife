@@ -24,6 +24,9 @@ export async function fetchChallenges(): Promise<{
   isCached: boolean;
   error?: string;
 }> {
+
+  await new Promise(resolve => setTimeout(resolve, 7001));
+
   try {
     const response = await fetch(
       'http://10.81.1.75:8000/api/v1/challenges/today'

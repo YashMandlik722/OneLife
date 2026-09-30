@@ -402,7 +402,23 @@ export default function ChallengeScreen() {
   const [healthError, setHealthError] = useState<string | null>(null);
   const [heroBgImage, setHeroBgImage] = useState<ImageSourcePropType>(FITNESS_IMAGES[0]);
 
+  const [loadingMessage, setLoadingMessage] = useState('🍳 Cooking challenge...');
   const challenge = dailyChallenge?.gemini_challenge ?? null;
+
+  useEffect(() => {
+    if (!loading) {
+      return;
+    }
+
+    setLoadingMessage('🍳 Cooking challenge...');
+
+    const timer = setTimeout(() => {
+      setLoadingMessage('👥 Gathering team...');
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [loading]);
+
 
   useEffect(() => {
     if (!dailyChallenge) {
@@ -428,7 +444,9 @@ export default function ChallengeScreen() {
         if (!response.data) {
           throw new Error(response.error || 'No challenge available today.');
         }
+
         const data = response.data;
+
         setDailyChallenge(data);
         setCache(challengeCacheKey, data);
       });
@@ -462,7 +480,6 @@ export default function ChallengeScreen() {
 
     setLoading(false);
   }, [challengeCacheKey]);
-
 
   useEffect(() => {
     let mounted = true;
@@ -509,6 +526,9 @@ export default function ChallengeScreen() {
           }}
         >
           <AIProcessingAnimation />
+          <Text style={styles.emptyStateTitle}>
+            {loadingMessage}
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -562,7 +582,7 @@ export default function ChallengeScreen() {
           targets={challenge.activity_data.targets}
         />
 
-        <HealthMetricsGrid healthData={healthData} />
+        {/* <HealthMetricsGrid healthData={healthData} /> */}
 
         {error && <ErrorAlert error={error} />}
         {healthError && <ErrorAlert error={healthError} />}
