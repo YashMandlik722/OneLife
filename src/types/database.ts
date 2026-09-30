@@ -1,6 +1,7 @@
 /**
  * Database schema models matching POC spec (8 tables)
  */
+export type { Challenge } from './challenge';
 
 export interface Department {
   id: string | number;
@@ -28,18 +29,6 @@ export interface TeamMember {
   team_id: string | number;
   user_id: string | number;
   joined_at?: string;
-}
-
-export interface Challenge {
-  id: string | number;
-  team_id: string | number;
-  title: string;
-  description: string;
-  target_value: number;
-  target_unit: string;
-  points: number;
-  status: 'ACTIVE' | 'COMPLETED' | 'UPCOMING';
-  created_at?: string;
 }
 
 export interface ChallengeProgress {

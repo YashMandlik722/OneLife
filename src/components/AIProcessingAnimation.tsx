@@ -1,6 +1,39 @@
 import React, { useEffect, useRef } from "react";
-import { StyleSheet, View, Animated, Easing, StyleProp, ViewStyle, DimensionValue } from "react-native";
-import Svg, { Defs, LinearGradient, Stop, Circle } from "react-native-svg";
+import {
+  Animated,
+  Easing,
+  StyleProp,
+  View,
+  ViewStyle,
+  DimensionValue,
+} from "react-native";
+import Svg, {
+  Defs,
+  LinearGradient,
+  Stop,
+  G,
+  Path,
+} from "react-native-svg";
+
+/**
+ * AIProcessingAnimation
+ *
+ * React Native equivalent of the supplied animated SVG.
+ *
+ * IMPORTANT:
+ * - The original artwork uses SVG SMIL <animateTransform>.
+ * - React Native does not reliably execute that SMIL timeline.
+ * - The original circular/dashed-ring approximation was also visually wrong:
+ *   rotating a Circle does not create visible rotation because a circle is
+ *   rotationally symmetric.
+ *
+ * This implementation keeps the original 25 animated elliptical layers and
+ * moves/rotates those layers directly with React Native Animated.
+ * Only one native animation clock is used, so we avoid 25 independent loops.
+ *
+ * Public API intentionally remains:
+ *   <AIProcessingAnimation width={260} height={260} style={...} />
+ */
 
 export type AIProcessingAnimationProps = {
   width?: DimensionValue;
@@ -8,163 +41,962 @@ export type AIProcessingAnimationProps = {
   style?: StyleProp<ViewStyle>;
 };
 
-// 24 Concentric Particle Ring Layers matching original geometry
-const TOTAL_RINGS = 24;
-const RINGS = Array.from({ length: TOTAL_RINGS }, (_, i) => {
-  const r = 16 + i * 5.75;
-  const opacity = 0.1 + (i / TOTAL_RINGS) * 0.86;
-  const dashArray = `1.2, ${6 + (i % 3) * 2.5}`;
-  const strokeWidth = 1.2 + (i / TOTAL_RINGS) * 0.4;
-  const bandIndex = i % 6;
-  return { id: i, r, opacity, dashArray, strokeWidth, bandIndex };
-});
+type Layer = {
+  opacity: number;
+  tx: (number | string)[];
+  ty: (number | string)[];
+  rot: (number | string)[];
+  inner: (number | string)[];
+  d: string;
+};
 
-// 6 Alternating Counter-Rotating Band Configurations
-const BAND_CONFIGS = [
-  { duration: 8000, clockwise: true },
-  { duration: 6200, clockwise: false },
-  { duration: 10500, clockwise: true },
-  { duration: 7400, clockwise: false },
-  { duration: 9200, clockwise: true },
-  { duration: 11500, clockwise: false },
+const DURATION = 8004;
+
+// These are the same five brighter colors already used by the RN version.
+// No new color palette is introduced.
+const COLORS = {
+  pink: "#ff66b5",
+  purple: "#b99aff",
+  blue: "#92b1ff",
+  teal: "#249f94",
+  green: "#20ff98",
+};
+
+const LAYERS: Layer[] = [
+  {
+    "opacity": 0.0,
+    "tx": [
+      "158.89",
+      "152.28",
+      "166.38",
+      "161.03",
+      "158.89",
+      "158.89"
+    ],
+    "ty": [
+      "155.79",
+      "156.75",
+      "166.63",
+      "152.45",
+      "155.79",
+      "155.79"
+    ],
+    "rot": [
+      "-98.78",
+      "-19.87",
+      "135.06",
+      "298.47",
+      "261.21",
+      "261.21"
+    ],
+    "inner": [
+      "-19.67",
+      "-156.07"
+    ],
+    "d": "M38.35,155.57C38.35,241.484,29.764,311.13,19.17,311.13C8.576,311.13,0,241.484,0,155.57C0,69.656,8.576,0,19.17,0C29.764,0,38.35,69.656,38.35,155.57C38.35,155.57,38.35,155.57,38.35,155.57Z"
+  },
+  {
+    "opacity": 0.042,
+    "tx": [
+      "158.87",
+      "152.34",
+      "166.34",
+      "161.06",
+      "158.87",
+      "158.87"
+    ],
+    "ty": [
+      "155.73",
+      "156.72",
+      "166.68",
+      "152.39",
+      "155.73",
+      "155.73"
+    ],
+    "rot": [
+      "-94.69",
+      "-15.78",
+      "139.15",
+      "302.56",
+      "265.3",
+      "265.3"
+    ],
+    "inner": [
+      "-23.82",
+      "-154.51"
+    ],
+    "d": "M46.63,154.01C46.63,239.074,36.194,308.02,23.32,308.02C10.446,308.02,0,239.074,0,154.01C0,68.956,10.446,0,23.32,0C36.194,0,46.63,68.956,46.63,154.01C46.63,154.01,46.63,154.01,46.63,154.01Z"
+  },
+  {
+    "opacity": 0.083,
+    "tx": [
+      "158.87",
+      "152.39",
+      "166.3",
+      "161.09",
+      "158.87",
+      "158.87"
+    ],
+    "ty": [
+      "155.68",
+      "156.71",
+      "166.72",
+      "152.34",
+      "155.68",
+      "155.68"
+    ],
+    "rot": [
+      "-90.6",
+      "-11.69",
+      "143.24",
+      "306.65",
+      "269.39",
+      "269.39"
+    ],
+    "inner": [
+      "-27.96",
+      "-152.96"
+    ],
+    "d": "M54.92,152.46C54.92,236.664,42.624,304.92,27.46,304.92C12.296,304.92,0,236.664,0,152.46C0,68.256,12.296,0,27.46,0C42.624,0,54.92,68.256,54.92,152.46C54.92,152.46,54.92,152.46,54.92,152.46Z"
+  },
+  {
+    "opacity": 0.125,
+    "tx": [
+      "158.87",
+      "152.43",
+      "166.26",
+      "161.11",
+      "158.87",
+      "158.87"
+    ],
+    "ty": [
+      "155.64",
+      "156.7",
+      "166.74",
+      "152.31",
+      "155.64",
+      "155.64"
+    ],
+    "rot": [
+      "-86.51",
+      "-7.6",
+      "147.33",
+      "310.74",
+      "273.48",
+      "273.48"
+    ],
+    "inner": [
+      "-32.1",
+      "-151.41"
+    ],
+    "d": "M63.2,150.91C63.2,234.254,49.054,301.82,31.6,301.82C14.146,301.82,0,234.254,0,150.91C0,67.566,14.146,0,31.6,0C49.054,0,63.2,67.566,63.2,150.91C63.2,150.91,63.2,150.91,63.2,150.91Z"
+  },
+  {
+    "opacity": 0.167,
+    "tx": [
+      "158.88",
+      "152.46",
+      "166.24",
+      "161.14",
+      "158.88",
+      "158.88"
+    ],
+    "ty": [
+      "155.61",
+      "156.71",
+      "166.75",
+      "152.3",
+      "155.61",
+      "155.61"
+    ],
+    "rot": [
+      "-82.41",
+      "-3.5",
+      "151.43",
+      "314.84",
+      "277.58",
+      "277.58"
+    ],
+    "inner": [
+      "-36.24",
+      "-149.87"
+    ],
+    "d": "M71.48,149.37C71.48,231.864,55.484,298.73,35.74,298.73C15.996,298.73,0,231.864,0,149.37C0,66.876,15.996,0,35.74,0C55.484,0,71.48,66.876,71.48,149.37C71.48,149.37,71.48,149.37,71.48,149.37Z"
+  },
+  {
+    "opacity": 0.208,
+    "tx": [
+      "158.89",
+      "152.47",
+      "166.22",
+      "161.15",
+      "158.89",
+      "158.89"
+    ],
+    "ty": [
+      "155.6",
+      "156.72",
+      "166.74",
+      "152.3",
+      "155.6",
+      "155.6"
+    ],
+    "rot": [
+      "-78.31",
+      "0.6",
+      "155.53",
+      "318.94",
+      "281.68",
+      "281.68"
+    ],
+    "inner": [
+      "-40.38",
+      "-148.32"
+    ],
+    "d": "M79.76,147.82C79.76,229.464,61.904,295.64,39.88,295.64C17.856,295.64,0,229.464,0,147.82C0,66.176,17.856,0,39.88,0C61.904,0,79.76,66.176,79.76,147.82C79.76,147.82,79.76,147.82,79.76,147.82Z"
+  },
+  {
+    "opacity": 0.25,
+    "tx": [
+      "158.91",
+      "152.47",
+      "166.22",
+      "161.16",
+      "158.91",
+      "158.91"
+    ],
+    "ty": [
+      "155.61",
+      "156.73",
+      "166.72",
+      "152.31",
+      "155.61",
+      "155.61"
+    ],
+    "rot": [
+      "-74.2",
+      "4.71",
+      "159.64",
+      "323.05",
+      "285.79",
+      "285.79"
+    ],
+    "inner": [
+      "-44.52",
+      "-146.78"
+    ],
+    "d": "M88.04,146.28C88.04,227.074,68.334,292.56,44.02,292.56C19.706,292.56,0,227.074,0,146.28C0,65.496,19.706,0,44.02,0C68.334,0,88.04,65.496,88.04,146.28C88.04,146.28,88.04,146.28,88.04,146.28Z"
+  },
+  {
+    "opacity": 0.292,
+    "tx": [
+      "158.93",
+      "152.45",
+      "166.22",
+      "161.16",
+      "158.93",
+      "158.93"
+    ],
+    "ty": [
+      "155.63",
+      "156.75",
+      "166.7",
+      "152.34",
+      "155.63",
+      "155.63"
+    ],
+    "rot": [
+      "-70.09",
+      "8.82",
+      "163.75",
+      "327.16",
+      "289.9",
+      "289.9"
+    ],
+    "inner": [
+      "-48.66",
+      "-145.24"
+    ],
+    "d": "M96.32,144.74C96.32,224.684,74.754,289.49,48.16,289.49C21.566,289.49,0,224.684,0,144.74C0,64.796,21.566,0,48.16,0C74.754,0,96.32,64.796,96.32,144.74C96.32,144.74,96.32,144.74,96.32,144.74Z"
+  },
+  {
+    "opacity": 0.333,
+    "tx": [
+      "158.94",
+      "152.41",
+      "166.25",
+      "161.15",
+      "158.94",
+      "158.94"
+    ],
+    "ty": [
+      "155.67",
+      "156.78",
+      "166.66",
+      "152.38",
+      "155.67",
+      "155.67"
+    ],
+    "rot": [
+      "-65.98",
+      "12.93",
+      "167.86",
+      "331.27",
+      "294.01",
+      "294.01"
+    ],
+    "inner": [
+      "-52.79",
+      "-143.71"
+    ],
+    "d": "M104.59,143.21C104.59,222.304,81.174,286.41,52.29,286.41C23.406,286.41,0,222.304,0,143.21C0,64.116,23.406,0,52.29,0C81.174,0,104.59,64.116,104.59,143.21C104.59,143.21,104.59,143.21,104.59,143.21Z"
+  },
+  {
+    "opacity": 0.375,
+    "tx": [
+      "158.95",
+      "152.36",
+      "166.28",
+      "161.13",
+      "158.95",
+      "158.95"
+    ],
+    "ty": [
+      "155.72",
+      "156.79",
+      "166.63",
+      "152.42",
+      "155.72",
+      "155.72"
+    ],
+    "rot": [
+      "-61.86",
+      "17.05",
+      "171.98",
+      "335.39",
+      "298.13",
+      "298.13"
+    ],
+    "inner": [
+      "-56.93",
+      "-142.17"
+    ],
+    "d": "M112.86,141.67C112.86,219.914,87.594,283.34,56.43,283.34C25.266,283.34,0,219.914,0,141.67C0,63.426,25.266,0,56.43,0C87.594,0,112.86,63.426,112.86,141.67C112.86,141.67,112.86,141.67,112.86,141.67Z"
+  },
+  {
+    "opacity": 0.417,
+    "tx": [
+      "158.95",
+      "152.3",
+      "166.33",
+      "161.09",
+      "158.95",
+      "158.95"
+    ],
+    "ty": [
+      "155.79",
+      "156.81",
+      "166.58",
+      "152.48",
+      "155.79",
+      "155.79"
+    ],
+    "rot": [
+      "-57.74",
+      "21.17",
+      "176.1",
+      "339.51",
+      "302.25",
+      "302.25"
+    ],
+    "inner": [
+      "-61.06",
+      "-140.64"
+    ],
+    "d": "M121.12,140.14C121.12,217.534,94.004,280.27,60.56,280.27C27.116,280.27,0,217.534,0,140.14C0,62.746,27.116,0,60.56,0C94.004,0,121.12,62.746,121.12,140.14C121.12,140.14,121.12,140.14,121.12,140.14Z"
+  },
+  {
+    "opacity": 0.458,
+    "tx": [
+      "158.94",
+      "152.22",
+      "166.4",
+      "161.04",
+      "158.94",
+      "158.94"
+    ],
+    "ty": [
+      "155.86",
+      "156.82",
+      "166.54",
+      "152.54",
+      "155.86",
+      "155.86"
+    ],
+    "rot": [
+      "-53.61",
+      "25.3",
+      "180.23",
+      "343.64",
+      "306.38",
+      "306.38"
+    ],
+    "inner": [
+      "-65.19",
+      "-139.1"
+    ],
+    "d": "M129.39,138.6C129.39,215.144,100.414,277.21,64.69,277.21C28.966,277.21,0,215.144,0,138.6C0,62.046,28.966,0,64.69,0C100.414,0,129.39,62.046,129.39,138.6C129.39,138.6,129.39,138.6,129.39,138.6Z"
+  },
+  {
+    "opacity": 0.5,
+    "tx": [
+      "158.93",
+      "151.38",
+      "166.48",
+      "159.63",
+      "158.93",
+      "158.93"
+    ],
+    "ty": [
+      "155.95",
+      "156.11",
+      "166.5",
+      "153.27",
+      "155.95",
+      "155.95"
+    ],
+    "rot": [
+      "-49.49",
+      "-50.12",
+      "-174.94",
+      "-148.33",
+      "-49.49",
+      "-49.49"
+    ],
+    "inner": [
+      "-69.32",
+      "-137.57"
+    ],
+    "d": "M137.65,137.07C137.65,212.774,106.834,274.14,68.82,274.14C30.806,274.14,0,212.774,0,137.07C0,61.366,30.806,0,68.82,0C106.834,0,137.65,61.366,137.65,137.07C137.65,137.07,137.65,137.07,137.65,137.07Z"
+  },
+  {
+    "opacity": 0.542,
+    "tx": [
+      "158.9",
+      "151.36",
+      "166.57",
+      "159.73",
+      "158.9",
+      "158.9"
+    ],
+    "ty": [
+      "156.04",
+      "156.2",
+      "166.47",
+      "153.28",
+      "156.04",
+      "156.04"
+    ],
+    "rot": [
+      "-45.36",
+      "-45.99",
+      "-170.81",
+      "-144.2",
+      "-45.36",
+      "-45.36"
+    ],
+    "inner": [
+      "-73.45",
+      "-136.04"
+    ],
+    "d": "M145.9,135.54C145.9,210.394,113.244,271.08,72.95,271.08C32.656,271.08,0,210.394,0,135.54C0,60.686,32.656,0,72.95,0C113.244,0,145.9,60.686,145.9,135.54C145.9,135.54,145.9,135.54,145.9,135.54Z"
+  },
+  {
+    "opacity": 0.583,
+    "tx": [
+      "158.86",
+      "151.32",
+      "166.67",
+      "159.83",
+      "158.86",
+      "158.86"
+    ],
+    "ty": [
+      "156.14",
+      "156.3",
+      "166.44",
+      "153.31",
+      "156.14",
+      "156.14"
+    ],
+    "rot": [
+      "-41.23",
+      "-41.86",
+      "-166.68",
+      "-140.07",
+      "-41.23",
+      "-41.23"
+    ],
+    "inner": [
+      "-77.58",
+      "-134.51"
+    ],
+    "d": "M154.16,134.01C154.16,208.024,119.654,268.01,77.08,268.01C34.506,268.01,0,208.024,0,134.01C0,60.006,34.506,0,77.08,0C119.654,0,154.16,60.006,154.16,134.01C154.16,134.01,154.16,134.01,154.16,134.01Z"
+  },
+  {
+    "opacity": 0.625,
+    "tx": [
+      "158.81",
+      "151.27",
+      "166.78",
+      "159.93",
+      "158.81",
+      "158.81"
+    ],
+    "ty": [
+      "156.24",
+      "156.4",
+      "166.43",
+      "153.34",
+      "156.24",
+      "156.24"
+    ],
+    "rot": [
+      "-37.1",
+      "-37.73",
+      "-162.55",
+      "-135.94",
+      "-37.1",
+      "-37.1"
+    ],
+    "inner": [
+      "-81.7",
+      "-132.97"
+    ],
+    "d": "M162.41,132.47C162.41,205.634,126.044,264.94,81.2,264.94C36.356,264.94,0,205.634,0,132.47C0,59.306,36.356,0,81.2,0C126.044,0,162.41,59.306,162.41,132.47C162.41,132.47,162.41,132.47,162.41,132.47Z"
+  },
+  {
+    "opacity": 0.667,
+    "tx": [
+      "158.75",
+      "151.2",
+      "166.89",
+      "160.04",
+      "158.75",
+      "158.75"
+    ],
+    "ty": [
+      "156.33",
+      "156.5",
+      "166.42",
+      "153.39",
+      "156.33",
+      "156.33"
+    ],
+    "rot": [
+      "-32.97",
+      "-33.6",
+      "-158.42",
+      "-131.81",
+      "-32.97",
+      "-32.97"
+    ],
+    "inner": [
+      "-85.83",
+      "-131.44"
+    ],
+    "d": "M170.66,130.94C170.66,203.254,132.454,261.87,85.33,261.87C38.206,261.87,0,203.254,0,130.94C0,58.626,38.206,0,85.33,0C132.454,0,170.66,58.626,170.66,130.94C170.66,130.94,170.66,130.94,170.66,130.94Z"
+  },
+  {
+    "opacity": 0.708,
+    "tx": [
+      "158.67",
+      "151.13",
+      "167.01",
+      "160.14",
+      "158.67",
+      "158.67"
+    ],
+    "ty": [
+      "156.42",
+      "156.59",
+      "166.43",
+      "153.45",
+      "156.42",
+      "156.42"
+    ],
+    "rot": [
+      "-28.84",
+      "-29.47",
+      "-154.29",
+      "-127.68",
+      "-28.84",
+      "-28.84"
+    ],
+    "inner": [
+      "-89.96",
+      "-129.9"
+    ],
+    "d": "M178.91,129.4C178.91,200.864,138.864,258.8,89.46,258.8C40.056,258.8,0,200.864,0,129.4C0,57.936,40.056,0,89.46,0C138.864,0,178.91,57.936,178.91,129.4C178.91,129.4,178.91,129.4,178.91,129.4Z"
+  },
+  {
+    "opacity": 0.75,
+    "tx": [
+      "158.59",
+      "151.05",
+      "167.13",
+      "160.24",
+      "158.59",
+      "158.59"
+    ],
+    "ty": [
+      "156.51",
+      "156.67",
+      "166.45",
+      "153.52",
+      "156.51",
+      "156.51"
+    ],
+    "rot": [
+      "-24.71",
+      "-25.34",
+      "-150.16",
+      "-123.55",
+      "-24.71",
+      "-24.71"
+    ],
+    "inner": [
+      "-94.08",
+      "-128.36"
+    ],
+    "d": "M187.16,127.86C187.16,198.474,145.264,255.72,93.58,255.72C41.896,255.72,0,198.474,0,127.86C0,57.246,41.896,0,93.58,0C145.264,0,187.16,57.246,187.16,127.86C187.16,127.86,187.16,127.86,187.16,127.86Z"
+  },
+  {
+    "opacity": 0.792,
+    "tx": [
+      "158.5",
+      "150.96",
+      "167.24",
+      "160.32",
+      "158.5",
+      "158.5"
+    ],
+    "ty": [
+      "156.58",
+      "156.75",
+      "166.48",
+      "153.6",
+      "156.58",
+      "156.58"
+    ],
+    "rot": [
+      "-20.59",
+      "-21.22",
+      "-146.04",
+      "-119.43",
+      "-20.59",
+      "-20.59"
+    ],
+    "inner": [
+      "-98.21",
+      "-126.82"
+    ],
+    "d": "M195.41,126.32C195.41,196.084,151.674,252.64,97.71,252.64C43.746,252.64,0,196.084,0,126.32C0,56.556,43.746,0,97.71,0C151.674,0,195.41,56.556,195.41,126.32C195.41,126.32,195.41,126.32,195.41,126.32Z"
+  },
+  {
+    "opacity": 0.833,
+    "tx": [
+      "158.4",
+      "150.86",
+      "167.35",
+      "160.4",
+      "158.4",
+      "158.4"
+    ],
+    "ty": [
+      "156.65",
+      "156.81",
+      "166.52",
+      "153.68",
+      "156.65",
+      "156.65"
+    ],
+    "rot": [
+      "-16.46",
+      "-17.09",
+      "-141.91",
+      "-115.3",
+      "-16.46",
+      "-16.46"
+    ],
+    "inner": [
+      "-102.33",
+      "-125.28"
+    ],
+    "d": "M203.67,124.78C203.67,193.694,158.074,249.56,101.83,249.56C45.586,249.56,0,193.694,0,124.78C0,55.866,45.586,0,101.83,0C158.074,0,203.67,55.866,203.67,124.78C203.67,124.78,203.67,124.78,203.67,124.78Z"
+  },
+  {
+    "opacity": 0.875,
+    "tx": [
+      "158.3",
+      "150.77",
+      "167.44",
+      "160.46",
+      "158.3",
+      "158.3"
+    ],
+    "ty": [
+      "156.69",
+      "156.86",
+      "166.57",
+      "153.77",
+      "156.69",
+      "156.69"
+    ],
+    "rot": [
+      "-12.34",
+      "-12.97",
+      "-137.79",
+      "-111.18",
+      "-12.34",
+      "-12.34"
+    ],
+    "inner": [
+      "-106.46",
+      "-123.73"
+    ],
+    "d": "M211.92,123.23C211.92,191.294,164.484,246.47,105.96,246.47C47.436,246.47,0,191.294,0,123.23C0,55.166,47.436,0,105.96,0C164.484,0,211.92,55.166,211.92,123.23C211.92,123.23,211.92,123.23,211.92,123.23Z"
+  },
+  {
+    "opacity": 0.917,
+    "tx": [
+      "158.21",
+      "150.67",
+      "167.53",
+      "160.51",
+      "158.21",
+      "158.21"
+    ],
+    "ty": [
+      "156.73",
+      "156.9",
+      "166.63",
+      "153.86",
+      "156.73",
+      "156.73"
+    ],
+    "rot": [
+      "-8.22",
+      "-8.85",
+      "-133.67",
+      "-107.06",
+      "-8.22",
+      "-8.22"
+    ],
+    "inner": [
+      "-110.59",
+      "-122.19"
+    ],
+    "d": "M220.18,121.69C220.18,188.894,170.894,243.37,110.09,243.37C49.286,243.37,0,188.894,0,121.69C0,54.486,49.286,0,110.09,0C170.894,0,220.18,54.486,220.18,121.69C220.18,121.69,220.18,121.69,220.18,121.69Z"
+  },
+  {
+    "opacity": 0.958,
+    "tx": [
+      "158.11",
+      "150.58",
+      "167.6",
+      "160.55",
+      "158.11",
+      "158.11"
+    ],
+    "ty": [
+      "156.75",
+      "156.92",
+      "166.7",
+      "153.95",
+      "156.75",
+      "156.75"
+    ],
+    "rot": [
+      "-4.11",
+      "-4.74",
+      "-129.56",
+      "-102.95",
+      "-4.11",
+      "-4.11"
+    ],
+    "inner": [
+      "-114.72",
+      "-120.64"
+    ],
+    "d": "M228.44,120.14C228.44,186.494,177.304,240.27,114.22,240.27C51.136,240.27,0,186.494,0,120.14C0,53.786,51.136,0,114.22,0C177.304,0,228.44,53.786,228.44,120.14C228.44,120.14,228.44,120.14,228.44,120.14Z"
+  },
+  {
+    "opacity": 1.0,
+    "tx": [
+      "158.03",
+      "150.49",
+      "167.66",
+      "160.57",
+      "158.03",
+      "158.03"
+    ],
+    "ty": [
+      "156.76",
+      "156.93",
+      "166.76",
+      "154.03",
+      "156.76",
+      "156.76"
+    ],
+    "rot": [
+      "0",
+      "-0.63",
+      "-125.45",
+      "-98.84",
+      "0",
+      "0"
+    ],
+    "inner": [
+      "-118.85",
+      "-119.08"
+    ],
+    "d": "M236.71,118.58C236.71,184.074,183.714,237.17,118.35,237.17C52.986,237.17,0,184.074,0,118.58C0,53.086,52.986,0,118.35,0C183.714,0,236.71,53.086,236.71,118.58C236.71,118.58,236.71,118.58,236.71,118.58Z"
+  }
 ];
+
+// react-native-svg elements can be made animatable with Animated.createAnimatedComponent.
+const AnimatedG = Animated.createAnimatedComponent(G);
+
+const KEY_TIMES = [0, 0.249875, 0.49975, 0.749625, 0.9995, 1];
 
 export default function AIProcessingAnimation({
   width = 260,
   height = 260,
   style,
 }: AIProcessingAnimationProps) {
-  // 6 Rotation Animated Values (UI thread)
-  const bandAnims = useRef(BAND_CONFIGS.map(() => new Animated.Value(0))).current;
-  // Breathing Scale Animated Value (UI thread)
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  // One shared native timeline drives every layer.
+  const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // 1. Continuous 60fps Native Rotations for alternating bands
-    const rotAnimations = bandAnims.map((anim, index) => {
-      const config = BAND_CONFIGS[index];
-      return Animated.loop(
-        Animated.timing(anim, {
-          toValue: 1,
-          duration: config.duration,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        })
-      );
-    });
-
-    // 2. Continuous Native Breathing Scale Pulse
-    const pulseAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.05,
-          duration: 1200,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 0.95,
-          duration: 1200,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
+    const animation = Animated.loop(
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: DURATION,
+        easing: Easing.linear,
+        useNativeDriver: true,
+        isInteraction: false,
+      })
     );
 
-    rotAnimations.forEach((a) => a.start());
-    pulseAnimation.start();
+    animation.start();
 
     return () => {
-      rotAnimations.forEach((a) => a.stop());
-      pulseAnimation.stop();
+      animation.stop();
+      progress.stopAnimation();
     };
-  }, [bandAnims, pulseAnim]);
+  }, [progress]);
 
   return (
     <Animated.View
       style={[
         {
-          width: width,
-          height: height,
-          transform: [{ scale: pulseAnim }],
+          width,
+          height,
           justifyContent: "center",
           alignItems: "center",
         },
         style,
       ]}
     >
-      {/* 6 Counter-Rotating Native Animated Layers */}
-      {BAND_CONFIGS.map((config, bandIdx) => {
-        const spin = bandAnims[bandIdx].interpolate({
-          inputRange: [0, 1],
-          outputRange: config.clockwise ? ["0deg", "360deg"] : ["0deg", "-360deg"],
-        });
+      <View
+        pointerEvents="none"
+        style={{
+          width: "100%",
+          height: "100%",
+        }}
+      >
+        <Svg
+          width="100%"
+          height="100%"
+          viewBox="0 0 340 340"
+          fill="none"
+        >
+          <Defs>
+            <LinearGradient
+              id="aiProcessingGradient"
+              x1="70"
+              y1="40"
+              x2="280"
+              y2="300"
+              gradientUnits="userSpaceOnUse"
+            >
+              <Stop offset="0%" stopColor={COLORS.pink} />
+              <Stop offset="25%" stopColor={COLORS.purple} />
+              <Stop offset="50%" stopColor={COLORS.blue} />
+              <Stop offset="75%" stopColor={COLORS.teal} />
+              <Stop offset="100%" stopColor={COLORS.green} />
+            </LinearGradient>
+          </Defs>
 
-        const bandRings = RINGS.filter((r) => r.bandIndex === bandIdx);
+          {LAYERS.map((layer, index) => {
+            const txNums = layer.tx.map((v) => typeof v === 'number' ? v : parseFloat(v));
+            const tyNums = layer.ty.map((v) => typeof v === 'number' ? v : parseFloat(v));
+            const rotNums = layer.rot.map((v) => typeof v === 'number' ? v : parseFloat(v));
+            const innerX = typeof layer.inner[0] === 'number' ? layer.inner[0] : parseFloat(layer.inner[0]);
+            const innerY = typeof layer.inner[1] === 'number' ? layer.inner[1] : parseFloat(layer.inner[1]);
 
-        return (
-          <Animated.View
-            key={`band-${bandIdx}`}
-            style={[
-              StyleSheet.absoluteFill,
-              {
-                transform: [{ rotate: spin }],
-              },
-            ]}
-          >
-            <Svg width="100%" height="100%" viewBox="0 0 340 340">
-              <Defs>
-                <LinearGradient
-                  id={`gradient-${bandIdx}`}
-                  x1="170"
-                  y1="10"
-                  x2="170"
-                  y2="330"
-                  gradientUnits="userSpaceOnUse"
-                >
-                  <Stop offset="0%" stopColor="#ff66b5" />
-                  <Stop offset="25%" stopColor="#b99aff" />
-                  <Stop offset="50%" stopColor="#92b1ff" />
-                  <Stop offset="75%" stopColor="#249f94" />
-                  <Stop offset="100%" stopColor="#20ff98" />
-                </LinearGradient>
-              </Defs>
+            const translateX = progress.interpolate({
+              inputRange: KEY_TIMES,
+              outputRange: txNums,
+            });
 
-              {/* Center Core Glowing Orb on base band */}
-              {bandIdx === 0 && (
-                <>
-                  <Circle cx="170" cy="170" r="10" fill={`url(#gradient-${bandIdx})`} opacity={0.9} />
-                  <Circle
-                    cx="170"
-                    cy="170"
-                    r="16"
-                    stroke={`url(#gradient-${bandIdx})`}
-                    strokeWidth={1.5}
-                    opacity={0.5}
-                    strokeDasharray="3, 3"
-                  />
-                </>
-              )}
+            const translateY = progress.interpolate({
+              inputRange: KEY_TIMES,
+              outputRange: tyNums,
+            });
 
-              {/* Particle Rings for this Band */}
-              {bandRings.map((ring) => (
-                <Circle
-                  key={`ring-${ring.id}`}
-                  cx="170"
-                  cy="170"
-                  r={ring.r}
-                  stroke={`url(#gradient-${bandIdx})`}
-                  strokeWidth={ring.strokeWidth}
-                  strokeDasharray={ring.dashArray}
-                  strokeLinecap="round"
-                  opacity={ring.opacity}
+            const rotation = progress.interpolate({
+              inputRange: KEY_TIMES,
+              outputRange: rotNums.map((value) => `${value}deg`),
+            });
+
+            /*
+             * This preserves the original SVG transform structure:
+             *
+             * translate(animatedPosition)
+             *   rotate(animatedAngle)
+             *     translate(originalPathOffset)
+             *       path
+             *
+             * The path itself is intentionally NOT changed.
+             */
+            return (
+              <AnimatedG
+                key={`ai-layer-${index}`}
+                opacity={layer.opacity}
+                transform={[
+                  { translateX },
+                  { translateY },
+                  { rotate: rotation },
+                  { translateX: innerX },
+                  { translateY: innerY },
+                ] as any}
+              >
+                <Path
+                  d={layer.d}
+                  stroke="url(#aiProcessingGradient)"
+                  strokeWidth={1}
                   fill="none"
+                  strokeLinecap="round"
+                  opacity={0.95}
                 />
-              ))}
-            </Svg>
-          </Animated.View>
-        );
-      })}
+              </AnimatedG>
+            );
+          })}
+
+        </Svg>
+      </View>
     </Animated.View>
   );
 }
