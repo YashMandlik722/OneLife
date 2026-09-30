@@ -8,7 +8,7 @@
 
 import { apiFetch, ApiResponse } from './client';
 import { fetchWithCache, TTL } from '../utils/cache';
-import { Challenge } from '../types/database';
+import { Challenge } from '../types/challenge';
 import { getFriendlyErrorMessage } from '../utils/errorFormatter';
 
 export interface GenerateChallengePayload {
@@ -16,19 +16,7 @@ export interface GenerateChallengePayload {
   preferred_unit?: 'steps' | 'calories' | 'elevation';
 }
 
-export interface ApiChallengeItem {
-  id: string | number;
-  team_id?: string | number;
-  title: string;
-  description: string;
-  target_value: number;
-  target_unit: 'steps' | 'calories' | 'elevation' | string;
-  points: number;
-  status: 'ACTIVE' | 'COMPLETED' | 'UPCOMING';
-  created_at?: string;
-  team_progress?: number;
-  user_progress?: number;
-}
+export type ApiChallengeItem = Challenge;
 
 /**
  * Fetch list of team challenges with SWR caching
