@@ -31,6 +31,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "device": "bash scripts/build_device.sh",
+    "ios:release": "bash scripts/build_device_release.sh",
     "xcode": "bash scripts/run_xcode_spm.sh",
     "web": "expo start --web"
   },
